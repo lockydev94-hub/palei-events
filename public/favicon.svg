@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <radialGradient id="glow" cx="88%" cy="12%" r="55%">
+      <stop offset="0%" stop-color="#c89b3c" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#c89b3c" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="32" height="32" rx="8" fill="#0f1522"/>
+  <!-- Gold ambient glow top-right -->
+  <rect width="32" height="32" rx="8" fill="url(#glow)"/>
+  <!-- P letter (matches apple-icon style) -->
+  <text x="4" y="23" font-family="Georgia,'Times New Roman',serif" font-size="20" font-weight="700" fill="#e8d5a8" letter-spacing="-1">P</text>
+  <!-- Gold dot accent bottom-right -->
+  <circle cx="26" cy="23" r="3" fill="#c89b3c"/>
+</svg>

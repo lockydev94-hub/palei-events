@@ -1,0 +1,394 @@
+@import "tailwindcss";
+
+@theme {
+  /* ===== Palei Events Design Tokens ===== */
+  --color-navy: #172033;
+  --color-navy-dark: #0f1522;
+  --color-navy-light: #22304d;
+  --color-gold: #c89b3c;
+  --color-gold-dark: #a67f2e;
+  --color-gold-light: #e0c584;
+  --color-champagne: #e8d5a8;
+  --color-ivory: #fffdf8;
+  --color-warmWhite: #faf8f3;
+  --color-softGray: #f3f4f6;
+  --color-darkText: #171717;
+  --color-mutedText: #6b7280;
+  --color-rose: #e88c9b;
+  --color-coral: #f29b7a;
+  --color-purple: #9b7acb;
+  --color-sage: #93a88a;
+
+  --font-display: "Playfair Display", "Times New Roman", serif;
+  --font-body: "Manrope", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Manrope", "Segoe UI", system-ui, sans-serif;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+
+  --shadow-soft: 0 4px 20px rgba(23, 32, 51, 0.08);
+  --shadow-card: 0 10px 40px rgba(23, 32, 51, 0.06);
+  --shadow-elevated: 0 24px 64px rgba(23, 32, 51, 0.1);
+
+  --animate-fade-in: fadeIn 0.6s ease forwards;
+  --animate-fade-up: fadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  --animate-slow-zoom: slowZoom 30s ease-in-out infinite alternate;
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes fadeIn {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes fadeUp {
+    0% {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes slowZoom {
+    0% {
+      transform: scale(1);
+    }
+    100% {
+      transform: scale(1.08);
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-12px);
+    }
+  }
+}
+
+/* ===== Base ===== */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-ivory);
+    color: var(--color-darkText);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--color-gold);
+    color: var(--color-ivory);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    color: var(--color-navy);
+  }
+
+  /* Visible focus ring for accessibility */
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 3px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ===== Utilities ===== */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  .container-shell {
+    @apply mx-auto w-full max-w-[1200px] px-5 sm:px-6 lg:px-10;
+  }
+
+  .section-pad {
+    @apply py-20 md:py-28 lg:py-32;
+  }
+
+  .glass {
+    background: rgba(255, 253, 248, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .text-gradient-gold {
+    background: linear-gradient(120deg, #c89b3c, #e8d5a8 45%, #c89b3c);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .scroll-indicator-dot {
+    @apply relative mx-auto h-14 w-7 rounded-full border border-white/40;
+  }
+
+  .scroll-indicator-dot::after {
+    content: "";
+    @apply absolute left-1/2 top-2 h-2 w-2 -translate-x-1/2 rounded-full bg-champagne;
+    animation: scrollPulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes scrollPulse {
+    0% {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
+    70% {
+      transform: translate(-50%, 18px);
+      opacity: 0;
+    }
+    100% {
+      transform: translate(-50%, 18px);
+      opacity: 0;
+    }
+  }
+}
+
+/* ===== Hero Premium Utilities (added) ===== */
+@layer utilities {
+  /* Tailwind font-body utility — maps to Manrope */
+  .font-body {
+    font-family: var(--font-body);
+  }
+
+  /* Ensure font-display utility also works explicitly */
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  /* Gold luminance glow on buttons */
+  .shadow-gold-glow {
+    box-shadow: 0 0 32px rgba(200, 155, 60, 0.45);
+  }
+  .hover\:shadow-gold-glow-lg:hover {
+    box-shadow: 0 0 56px rgba(200, 155, 60, 0.65);
+  }
+}
+
+/* ===== Hero — missing responsive font size + glass utilities ===== */
+@layer utilities {
+  /* text-hero was referenced but never defined — using clamp inline in JSX now,
+     keeping this as a fallback utility if needed elsewhere */
+  .text-hero {
+    font-size: clamp(2.6rem, 5.5vw, 4.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+  }
+
+  /* Refined gold glow variants */
+  .shadow-gold-glow {
+    box-shadow: 0 0 28px rgba(200, 155, 60, 0.45);
+  }
+  .shadow-gold-glow-lg {
+    box-shadow: 0 0 56px rgba(200, 155, 60, 0.65);
+  }
+
+  /* Glass card variant for dark hero context */
+  .glass-dark {
+    background: rgba(10, 15, 28, 0.55);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* ===== Premium Section Additions ===== */
+@layer utilities {
+  /* scale-108 for subtle image zoom */
+  .hover\:scale-108:hover {
+    --tw-scale-x: 1.08;
+    --tw-scale-y: 1.08;
+    transform: var(--tw-transform);
+  }
+  .group-hover\/img\:scale-105 {
+    transition: transform 0.7s ease;
+  }
+  .group-hover\/img\:scale-105:hover {
+    transform: scale(1.05);
+  }
+}
+
+/* Marquee animation for TrustStrip + Hero chips */
+@layer utilities {
+  @keyframes marquee {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .animate-marquee {
+    display: flex;
+    animation: marquee 28s linear infinite;
+  }
+  .animate-marquee:hover {
+    animation-play-state: paused;
+  }
+}
+
+/* ===== Scroll Reveal Animations ===== */
+@layer utilities {
+  /* --- Shared base: elements start hidden until JS adds .sr-visible --- */
+
+  /* 1. Fade Up — default, used by TrustStrip & HowItWorks */
+  .sr-fade-up {
+    opacity: 0;
+    transform: translateY(40px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sr-fade-up.sr-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* 2. Fade Left — slides in from right, used by EventTypes */
+  .sr-fade-left {
+    opacity: 0;
+    transform: translateX(48px);
+    transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sr-fade-left.sr-visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  /* 3. Fade Right — slides in from left, used by ExperienceSection */
+  .sr-fade-right {
+    opacity: 0;
+    transform: translateX(-48px);
+    transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sr-fade-right.sr-visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  /* 4. Zoom Fade — scales up from small, used by FeaturesPreview */
+  .sr-zoom-fade {
+    opacity: 0;
+    transform: scale(0.88);
+    transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sr-zoom-fade.sr-visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* 5. Flip Up — rotates in on X axis, used by TemplatesPreview */
+  .sr-flip-up {
+    opacity: 0;
+    transform: perspective(800px) rotateX(18deg) translateY(32px);
+    transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sr-flip-up.sr-visible {
+    opacity: 1;
+    transform: perspective(800px) rotateX(0deg) translateY(0);
+  }
+
+  /* 6. Blur Reveal — blurs in, used by MemoriesSection */
+  .sr-blur-reveal {
+    opacity: 0;
+    filter: blur(12px);
+    transform: translateY(24px);
+    transition: opacity 0.85s cubic-bezier(0.22, 1, 0.36, 1),
+                filter 0.85s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sr-blur-reveal.sr-visible {
+    opacity: 1;
+    filter: blur(0px);
+    transform: translateY(0);
+  }
+
+  /* 7. Rise Stagger — for SolutionsPreview cards (children get delay) */
+  .sr-rise {
+    opacity: 0;
+    transform: translateY(56px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sr-rise.sr-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Stagger delay helpers */
+  .sr-delay-100 { transition-delay: 100ms; }
+  .sr-delay-150 { transition-delay: 150ms; }
+  .sr-delay-200 { transition-delay: 200ms; }
+  .sr-delay-250 { transition-delay: 250ms; }
+  .sr-delay-300 { transition-delay: 300ms; }
+  .sr-delay-400 { transition-delay: 400ms; }
+  .sr-delay-500 { transition-delay: 500ms; }
+  .sr-delay-600 { transition-delay: 600ms; }
+}
+
+/* ── Scroll reveal: zero transition-delay on EXIT (no .sr-visible) so elements
+   snap back instantly — the stagger delay only applies when entering ──────── */
+@layer utilities {
+  .sr-fade-up:not(.sr-visible),
+  .sr-fade-left:not(.sr-visible),
+  .sr-fade-right:not(.sr-visible),
+  .sr-zoom-fade:not(.sr-visible),
+  .sr-flip-up:not(.sr-visible),
+  .sr-blur-reveal:not(.sr-visible),
+  .sr-rise:not(.sr-visible) {
+    transition-delay: 0ms !important;
+  }
+}
+
+/* ===== Hero Content — shimmer gold headline + scroll mouse ===== */
+@keyframes shimmerGold {
+  0%   { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes scrollDot {
+  0%   { transform: translateY(0); opacity: 1; }
+  80%  { transform: translateY(12px); opacity: 0; }
+  81%  { transform: translateY(0); opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* ── Typewriter cursor blink ──────────────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
