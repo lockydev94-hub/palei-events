@@ -22,6 +22,7 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [callbackOpen, setCallbackOpen] = useState(false);
+  const [prevPathname, setPrevPathname] = useState<string | null>(null);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -31,10 +32,11 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // close mobile menu on route change
-  useEffect(() => {
+  // close mobile menu on route change (render-phase state adjustment)
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname);
     setMenuOpen(false);
-  }, [pathname]);
+  }
 
   const glassy = scrolled || menuOpen;
 
@@ -160,9 +162,11 @@ export function Navbar() {
               aria-label="Request a callback"
               className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors"
               style={{
-                background: "rgba(200,155,60,0.10)",
-                border: "1px solid rgba(200,155,60,0.25)",
+                background: "rgba(10,15,28,0.55)",
+                border: "1px solid rgba(200,155,60,0.4)",
                 color: "#e0c584",
+                backdropFilter: "blur(10px)",
+                WebkitBackdropFilter: "blur(10px)",
               }}
             >
               <svg
@@ -185,8 +189,14 @@ export function Navbar() {
               onClick={() => setMenuOpen((open) => !open)}
               className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors"
               style={{
-                background: menuOpen ? "rgba(200,155,60,0.12)" : "rgba(255,255,255,0.07)",
-                border: "1px solid rgba(255,255,255,0.10)",
+                background: menuOpen
+                  ? "rgba(10,15,28,0.75)"
+                  : "rgba(10,15,28,0.55)",
+                border: menuOpen
+                  ? "1px solid rgba(200,155,60,0.55)"
+                  : "1px solid rgba(255,255,255,0.22)",
+                backdropFilter: "blur(10px)",
+                WebkitBackdropFilter: "blur(10px)",
               }}
               aria-expanded={menuOpen}
               aria-controls="mobile-menu"

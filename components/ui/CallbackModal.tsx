@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 interface CallbackModalProps {
@@ -293,10 +293,10 @@ export function CallbackModal({ open, onClose }: CallbackModalProps) {
         <div
           ref={panelRef}
           className={cn(
-            "w-full max-w-sm rounded-3xl overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-auto",
+            "w-full max-w-sm rounded-3xl overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
             open
-              ? "opacity-100 translate-y-0 scale-100"
-              : "opacity-0 translate-y-6 scale-95"
+              ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
+              : "opacity-0 translate-y-6 scale-95 pointer-events-none"
           )}
           style={{
             background: "rgba(255,253,248,0.99)",

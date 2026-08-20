@@ -83,7 +83,7 @@ export function FloatingContact() {
   return (
     <div
       ref={panelRef}
-      className="fixed bottom-7 right-7 z-[200] flex flex-col items-end gap-3 pointer-events-none"
+      className="fixed bottom-20 right-4 z-[200] flex flex-col items-end gap-3 pointer-events-none sm:right-7 md:bottom-7"
       aria-live="polite"
     >
       {/* ── Contact panel ────────────────────────────────────── */}

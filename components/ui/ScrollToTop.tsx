@@ -34,7 +34,7 @@ export function ScrollToTop() {
 
   return (
     <div
-      className="fixed bottom-6 left-6 z-[190]"
+      className="fixed bottom-20 left-5 z-[190] md:bottom-6 md:left-6"
       aria-hidden={!visible}
       style={{
         opacity: visible ? 1 : 0,
