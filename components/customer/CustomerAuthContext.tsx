@@ -27,7 +27,7 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth"
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore"
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
 
 export interface CustomerUser {
@@ -64,7 +64,16 @@ export function useCustomerAuth(): CustomerAuthContextType {
   return ctx
 }
 
-async function loadOrCreateProfile(
+/**
+ * De-dupes concurrent profile loads for the same uid. Without this, the
+ * onAuthStateChanged listener and an explicit login()/register() call can
+ * race: whoever writes the profile doc second performs an *update* with
+ * keys the security rules' update-allowlist rejects → the customer sees
+ * "Missing or insufficient permissions." One uid = one in-flight promise.
+ */
+const profileInFlight = new Map<string, Promise<{ isAdmin: boolean; plan: string }>>()
+
+async function fetchOrCreateProfile(
   firebaseUser: User
 ): Promise<{ isAdmin: boolean; plan: string }> {
   // Admins carry the custom claim; they never touch the customer portal.
@@ -72,26 +81,36 @@ async function loadOrCreateProfile(
   const isAdmin = token.claims.admin === true
 
   const userRef = doc(db, "users", firebaseUser.uid)
-  let plan = "free"
-  let snap
+
+  // Existing profile → read plan, touch lastLogin (allowed fields only).
   try {
-    snap = await getDoc(userRef)
+    const snap = await getDoc(userRef)
+    if (snap.exists()) {
+      const plan = (snap.data() as { plan?: string }).plan || "free"
+      updateDoc(userRef, {
+        lastLogin: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }).catch(() => {}) // cosmetic only — never block sign-in on it
+      return { isAdmin, plan }
+    }
   } catch {
-    snap = null
+    // Read failed (e.g. claim not yet on token) — fall through to create.
   }
 
-  if (snap?.exists()) {
-    plan = (snap.data() as { plan?: string }).plan || "free"
-  } else if (!isAdmin) {
-    // First login (e.g. via Google) — create the customer profile.
-    // The rules force role == "customer" for self-created profiles.
+  if (isAdmin) return { isAdmin, plan: "free" }
+
+  // First login (register or Google) — create the customer profile.
+  // The rules force role == "customer" for self-created profiles. A merge
+  // write tolerates a concurrent creator; if we lose that race the doc
+  // simply exists afterwards and we read the winner's values.
+  try {
     await setDoc(
       userRef,
       {
         uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        displayName: firebaseUser.displayName || "",
-        photoURL: firebaseUser.photoURL || "",
+        email: firebaseUser.email ?? "",
+        displayName: firebaseUser.displayName ?? "",
+        photoURL: firebaseUser.photoURL ?? "",
         role: "customer",
         plan: "free",
         eventsCreated: 0,
@@ -102,8 +121,34 @@ async function loadOrCreateProfile(
       },
       { merge: true }
     )
+  } catch {
+    // Lost the create race (or claim lag) — the re-read below resolves it.
+  }
+
+  let plan = "free"
+  try {
+    const snap = await getDoc(userRef)
+    if (snap.exists()) {
+      plan = (snap.data() as { plan?: string }).plan || "free"
+    }
+  } catch {
+    // Keep "free" — RequireCustomer's gate handles the fallback safely.
   }
   return { isAdmin, plan }
+}
+
+function loadOrCreateProfile(
+  firebaseUser: User
+): Promise<{ isAdmin: boolean; plan: string }> {
+  const uid = firebaseUser.uid
+  let inFlight = profileInFlight.get(uid)
+  if (!inFlight) {
+    inFlight = fetchOrCreateProfile(firebaseUser).finally(() => {
+      profileInFlight.delete(uid)
+    })
+    profileInFlight.set(uid, inFlight)
+  }
+  return inFlight
 }
 
 export function CustomerAuthProvider({ children }: { children: ReactNode }) {
@@ -164,26 +209,20 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
       if (name) {
         await updateProfile(result.user, { displayName: name })
       }
-      await setDoc(doc(db, "users", result.user.uid), {
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: name,
-        photoURL: "",
-        role: "customer",
-        plan: "free",
-        eventsCreated: 0,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        lastLogin: serverTimestamp(),
-        preferences: { theme: "light", onboardingCompleted: false },
-      })
+      // Do NOT setDoc the profile here. The onAuthStateChanged listener
+      // (which fires as soon as the auth user exists) owns profile
+      // creation via loadOrCreateProfile — a second concurrent write from
+      // this path would land as an *update* with fields the rules reject
+      // ("Missing or insufficient permissions"). Awaiting the shared
+      // de-duped promise is race-safe and gives us the authoritative plan.
+      const { plan } = await loadOrCreateProfile(result.user)
       return {
         uid: result.user.uid,
         email: result.user.email,
         displayName: name,
         photoURL: result.user.photoURL,
         isAdmin: false,
-        plan: "free",
+        plan,
       }
     },
     []
