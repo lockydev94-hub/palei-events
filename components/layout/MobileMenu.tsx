@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { navLinks } from "@/data/site";
+import { usePublicCustomer } from "./usePublicCustomer";
 
 interface MobileMenuProps {
   open: boolean;
@@ -14,6 +16,90 @@ interface MobileMenuProps {
 function isActive(href: string, pathname: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(href + "/");
+}
+
+function initials(nameOrEmail: string | null): string {
+  if (!nameOrEmail) return "?";
+  const parts = nameOrEmail.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || parts[0]?.[1] || "")).toUpperCase() || "?";
+}
+
+/** Signed-in account block for the mobile menu (hidden when logged out). */
+function MobileAccount({ onClose }: { onClose: () => void }) {
+  const { user, signOutPublic } = usePublicCustomer();
+  const router = useRouter();
+  if (!user) return null;
+
+  async function handleSignOut() {
+    onClose();
+    await signOutPublic();
+    router.replace("/");
+  }
+
+  return (
+    <div
+      className="mb-5 rounded-2xl p-4"
+      style={{
+        background: "linear-gradient(135deg, rgba(200,155,60,0.10), rgba(200,155,60,0.03))",
+        border: "1px solid rgba(200,155,60,0.22)",
+      }}
+    >
+      <div className="flex items-center gap-3">
+        {user.photoURL ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={user.photoURL} alt="" className="h-9 w-9 rounded-xl object-cover" />
+        ) : (
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-[0.7rem] font-bold"
+            style={{ background: "linear-gradient(135deg, #c89b3c, #a67f2e)", color: "#0f1522" }}
+          >
+            {initials(user.displayName || user.email)}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[0.85rem] font-semibold text-ivory">
+            {user.displayName || user.email?.split("@")[0] || "Customer"}
+          </p>
+          <p className="truncate text-[0.68rem] text-ivory/45">{user.email}</p>
+        </div>
+        <span
+          className="flex-shrink-0 rounded-full px-2.5 py-0.5 text-[0.56rem] font-bold uppercase tracking-[0.14em]"
+          style={{
+            background: user.plan === "free" ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)",
+            color: user.plan === "free" ? "#fbbf24" : "#34d399",
+          }}
+        >
+          {user.plan === "free" ? "No plan" : user.plan}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Link
+          href="/dashboard"
+          onClick={onClose}
+          className="rounded-xl px-3 py-2.5 text-center text-[0.78rem] font-semibold"
+          style={{ background: "rgba(200,155,60,0.14)", color: "#e0c584" }}
+        >
+          Dashboard
+        </Link>
+        <Link
+          href="/dashboard/plan"
+          onClick={onClose}
+          className="rounded-xl px-3 py-2.5 text-center text-[0.78rem] font-semibold"
+          style={{ border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,253,248,0.7)" }}
+        >
+          Plan
+        </Link>
+      </div>
+      <button
+        type="button"
+        onClick={handleSignOut}
+        className="mt-2 w-full rounded-xl px-3 py-2.5 text-[0.78rem] font-semibold"
+        style={{ background: "rgba(239,68,68,0.10)", color: "#fca5a5" }}
+      >
+        Sign out
+      </button>
+    </div>
+  );
 }
 
 export function MobileMenu({ open, onClose, onCallbackOpen, pathname }: MobileMenuProps) {
@@ -36,6 +122,9 @@ export function MobileMenu({ open, onClose, onCallbackOpen, pathname }: MobileMe
           boxShadow: "0 24px 48px rgba(0,0,0,0.45)",
         }}
       >
+        {/* Signed-in customer block (hidden when logged out) */}
+        <MobileAccount onClose={onClose} />
+
         {/* Nav links */}
         <nav aria-label="Mobile navigation" className="flex flex-col gap-0.5 mb-5">
           {navLinks.map((link, i) => {
@@ -154,19 +243,8 @@ export function MobileMenu({ open, onClose, onCallbackOpen, pathname }: MobileMe
             Create Event
           </Link>
 
-          {/* Login */}
-          <Link
-            href="/login"
-            onClick={onClose}
-            className="flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-[0.88rem] font-medium transition-all duration-200"
-            style={{
-              border: "1px solid rgba(255,255,255,0.09)",
-              background: "transparent",
-              color: "rgba(255,253,248,0.55)",
-            }}
-          >
-            Login to your account
-          </Link>
+          {/* Login (hidden while a customer session is active) */}
+          <MobileLoginLink />
         </div>
 
         {/* Bottom micro-text */}
@@ -178,5 +256,23 @@ export function MobileMenu({ open, onClose, onCallbackOpen, pathname }: MobileMe
         </p>
       </div>
     </div>
+  );
+}
+
+function MobileLoginLink() {
+  const { user, loading } = usePublicCustomer();
+  if (loading || user) return null;
+  return (
+    <Link
+      href="/login"
+      className="flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-[0.88rem] font-medium transition-all duration-200"
+      style={{
+        border: "1px solid rgba(255,255,255,0.09)",
+        background: "transparent",
+        color: "rgba(255,253,248,0.55)",
+      }}
+    >
+      Login to your account
+    </Link>
   );
 }

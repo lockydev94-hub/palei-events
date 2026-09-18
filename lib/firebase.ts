@@ -1,6 +1,6 @@
-import { initializeApp } from "firebase/app"
-import { getAuth } from "firebase/auth"
-import { getFirestore } from "firebase/firestore"
+import { initializeApp, getApps } from "firebase/app"
+import { getAuth, type Auth } from "firebase/auth"
+import { getFirestore, type Firestore } from "firebase/firestore"
 
 // Firebase configuration — values are read from public env vars so the same
 // build can target different Firebase projects (dev / staging / prod) without
@@ -59,6 +59,28 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
+
+/**
+ * Namespaced instances for the ADMIN console.
+ *
+ * Firebase Auth allows one signed-in user per app instance. The public site
+ * (customer portal) uses the default app above; the admin console uses this
+ * separate app so BOTH sessions can coexist in the same browser. Without the
+ * split, a customer sign-in replaces the admin session (and vice versa) and
+ * the admin guard bounces to /admin/login?denied=1.
+ */
+const ADMIN_APP_NAME = "palei-admin"
+
+function getAdminApp() {
+  return (
+    getApps().find((a) => a.name === ADMIN_APP_NAME) ??
+    initializeApp(firebaseConfig, ADMIN_APP_NAME)
+  )
+}
+
+export const adminApp = getAdminApp()
+export const adminAuth: Auth = getAuth(adminApp)
+export const adminDb: Firestore = getFirestore(adminApp)
 
 // Server-side service account (used by admin-side scripts / Cloud Functions).
 // Falls back to empty when running in a pure browser context.

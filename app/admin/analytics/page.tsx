@@ -39,10 +39,10 @@ export default function AnalyticsPage() {
       setLoading(true)
       try {
         const [e, b, t, u] = await Promise.all([
-          getEvents(),
-          getBlogPosts(),
-          getTemplates(),
-          getUsers(),
+          getEvents("admin"),
+          getBlogPosts("admin"),
+          getTemplates("admin", "admin"),
+          getUsers("admin"),
         ])
         setEvents(e)
         setPosts(b)

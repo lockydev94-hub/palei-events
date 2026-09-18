@@ -34,8 +34,8 @@ export default function DashboardPage() {
     async function load() {
       try {
         const [eventsData, usersData] = await Promise.all([
-          getEvents(),
-          getUsers(),
+          getEvents("admin"),
+          getUsers("admin"),
         ])
         setEvents(eventsData)
         setUsers(usersData)

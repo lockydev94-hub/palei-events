@@ -53,7 +53,7 @@ export default function TemplatesPage() {
   async function loadTemplates() {
     setLoading(true)
     try {
-      const data = await getTemplates()
+      const data = await getTemplates("admin", "admin")
       setTemplatesList(data)
     } catch {
       setTemplatesList(fallbackTemplates)
@@ -80,6 +80,7 @@ export default function TemplatesPage() {
     try {
       await updateTemplate(editingTemplate.id, editingTemplate, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
       setTemplatesList((prev) =>
         prev.map((t) => (t.id === editingTemplate.id ? editingTemplate : t))
@@ -98,6 +99,7 @@ export default function TemplatesPage() {
     try {
       const id = await createTemplate(editingTemplate!, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
       setTemplatesList((prev) => [...prev, { ...(editingTemplate as Template), id }])
       setEditingTemplate(null)
@@ -114,6 +116,7 @@ export default function TemplatesPage() {
     try {
       await deleteTemplate(id, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
       setTemplatesList((prev) => prev.filter((t) => t.id !== id))
     } catch (err) {

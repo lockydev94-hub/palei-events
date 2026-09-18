@@ -1,7 +1,11 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
-import { auth, db } from "@/lib/firebase"
+// The admin console uses its OWN Firebase app (adminAuth/adminDb) so its
+// session coexists with the customer portal session in the same browser —
+// sharing one auth instance meant a customer sign-in replaced the admin
+// session (RequireAdmin then bounced to /admin/login?denied=1).
+import { adminAuth, adminDb } from "@/lib/firebase"
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -45,7 +49,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsub = onAuthStateChanged(adminAuth, async (firebaseUser) => {
       if (firebaseUser) {
         // eslint-disable-next-line no-console
         console.log(
@@ -74,7 +78,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // permission-denied we may be holding a token issued before
           // custom claims were set (e.g. session persisted across a
           // claim rotation). Refresh once and retry.
-          const userRef = doc(db, "users", firebaseUser.uid)
+          const userRef = doc(adminDb, "users", firebaseUser.uid)
           // eslint-disable-next-line no-console
           console.log("[auth] reading profile from:", userRef.path)
 
@@ -192,19 +196,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    const result = await signInWithEmailAndPassword(auth, email, password)
+    const result = await signInWithEmailAndPassword(adminAuth, email, password)
     // Force token refresh to get latest custom claims
     await result.user.getIdToken(true)
   }, [])
 
   const loginWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider()
-    const result = await signInWithPopup(auth, provider)
+    const result = await signInWithPopup(adminAuth, provider)
     await result.user.getIdToken(true)
   }, [])
 
   const logout = useCallback(async () => {
-    await signOut(auth)
+    await signOut(adminAuth)
     setUser(null)
   }, [])
 

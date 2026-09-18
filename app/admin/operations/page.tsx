@@ -31,7 +31,7 @@ export default function OperationsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const data = await getSiteSettings()
+        const data = await getSiteSettings("admin")
         // Merge the loaded data over the static defaults so blank fields
         // (e.g. when a new social handle hasn't been set) still show.
         setSettings({ ...site, ...(data as object) })
@@ -61,7 +61,7 @@ export default function OperationsPage() {
           social: settings.social || {},
           seo: settings.seo || {},
         },
-        { actor: user ? { uid: user.uid, email: user.email } : undefined }
+        { actor: user ? { uid: user.uid, email: user.email } : undefined, ctx: "admin" }
       )
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)

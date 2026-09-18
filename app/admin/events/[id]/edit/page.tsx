@@ -161,7 +161,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
             gallery,
             wishes,
           },
-          { actor: user ? { uid: user.uid, email: user.email } : undefined }
+          { actor: user ? { uid: user.uid, email: user.email } : undefined, ctx: "admin" }
         )
         setSuccess(true)
         setTimeout(() => setSuccess(false), 3000)

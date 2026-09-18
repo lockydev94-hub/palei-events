@@ -91,7 +91,10 @@ export function PlanGate() {
         plan: selected,
         message: message.trim() || undefined,
       })
+      // Request landed — take the customer into the dashboard where the
+      // Overview shows the requested plan details and live review status.
       setJustSubmitted(true)
+      router.replace("/dashboard")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit your request.")
     } finally {
@@ -164,7 +167,7 @@ export function PlanGate() {
               Requested: {request ? TIER_LABELS[request.plan] : ""} plan
             </p>
             <p className="mt-1 text-[0.78rem]" style={{ color: "rgba(255,253,248,0.5)" }}>
-              Submitted {request?.createdAt ? new Date(request.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : ""} · We'll email you when it's approved.
+              Submitted {request?.createdAt ? new Date(request.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : ""} · We&apos;ll email you when it&apos;s approved.
             </p>
           </div>
         )}

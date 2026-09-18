@@ -107,7 +107,7 @@ function AnnouncementsPanel() {
   async function load() {
     setLoading(true)
     try {
-      setList(await getActiveAnnouncements())
+      setList(await getActiveAnnouncements(undefined, "admin"))
     } catch (err) {
       console.error(err)
     } finally {
@@ -121,9 +121,9 @@ function AnnouncementsPanel() {
     try {
       const actor = user ? { uid: user.uid, email: user.email } : undefined
       if (editing.id) {
-        await updateAnnouncement(editing.id, editing, { actor })
+        await updateAnnouncement(editing.id, editing, { actor, ctx: "admin" })
       } else {
-        const id = await createAnnouncement(editing, { actor })
+        const id = await createAnnouncement(editing, { actor, ctx: "admin" })
         setList((prev) => [...prev, { ...(editing as Announcement), id }])
         setEditing(null)
         await load()
@@ -140,6 +140,7 @@ function AnnouncementsPanel() {
     if (!confirm(`Delete announcement "${a.title}"?`)) return
     await deleteAnnouncement(a.id, {
       actor: user ? { uid: user.uid, email: user.email } : undefined,
+    ctx: "admin",
     })
     setList((prev) => prev.filter((x) => x.id !== a.id))
   }
@@ -318,7 +319,7 @@ function CampaignsPanel() {
   async function load() {
     setLoading(true)
     try {
-      setList(await getCampaigns())
+      setList(await getCampaigns("admin"))
     } catch (err) {
       console.error(err)
     } finally {
@@ -332,10 +333,10 @@ function CampaignsPanel() {
     try {
       const actor = user ? { uid: user.uid, email: user.email } : undefined
       if (editing.id) {
-        await updateCampaign(editing.id, editing, { actor })
+        await updateCampaign(editing.id, editing, { actor, ctx: "admin" })
         setList((prev) => prev.map((c) => (c.id === editing.id ? { ...c, ...editing } : c)))
       } else {
-        const id = await createCampaign(editing, { actor })
+        const id = await createCampaign(editing, { actor, ctx: "admin" })
         setList((prev) => [...prev, { ...(editing as Campaign), id }])
       }
       setEditing(null)
@@ -348,6 +349,7 @@ function CampaignsPanel() {
     if (!confirm(`Delete campaign "${c.code}"?`)) return
     await deleteCampaign(c.id, {
       actor: user ? { uid: user.uid, email: user.email } : undefined,
+    ctx: "admin",
     })
     setList((prev) => prev.filter((x) => x.id !== c.id))
   }

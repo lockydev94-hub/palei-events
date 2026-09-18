@@ -13,7 +13,7 @@ export default function UsersPage() {
   useEffect(() => {
     async function load() {
       try {
-        const data = await getUsers()
+        const data = await getUsers("admin")
         setUsers(data)
       } catch (err) {
         console.error("Failed to load users:", err)

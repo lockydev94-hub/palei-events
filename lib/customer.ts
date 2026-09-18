@@ -22,7 +22,7 @@ import {
   setDoc,
   type Unsubscribe,
 } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { db, adminDb } from "@/lib/firebase"
 import {
   createEvent,
   deleteEvent,
@@ -127,23 +127,28 @@ export function subscribeToMyPlanRequests(
 // ── Admin review actions (admin claim required by rules) ─────────
 
 /**
- * Admin approves a plan request: flips the request status, upgrades the
- * customer's profile plan and creates an active subscription.
+ * Admin review actions (admin claim required by rules).
+ *
+ * These always run on the ADMIN session (adminDb): the rules only let an
+ * admin claim update planRequests, set users/{uid}.plan, or create
+ * subscriptions. With both sessions living side by side (see
+ * lib/firebase.ts), routing through adminDb keeps admin actions working
+ * even when the browser also holds a customer session.
  */
 export async function approvePlanRequest(
   request: PlanRequest,
   actor: { uid: string; email: string }
 ): Promise<void> {
-  await updateDoc(doc(db, PLAN_REQUESTS_COLLECTION, request.id), {
+  await updateDoc(doc(adminDb, PLAN_REQUESTS_COLLECTION, request.id), {
     status: "approved" as PlanRequestStatus,
     reviewedAt: new Date().toISOString(),
     reviewedBy: actor.email || actor.uid,
   })
-  await updateDoc(doc(db, "users", request.uid), {
+  await updateDoc(doc(adminDb, "users", request.uid), {
     plan: request.plan,
     updatedAt: new Date().toISOString(),
   })
-  await setDoc(doc(collection(db, "subscriptions")), {
+  await setDoc(doc(collection(adminDb, "subscriptions")), {
     userId: request.uid,
     plan: request.plan,
     status: "active",
@@ -163,7 +168,7 @@ export async function rejectPlanRequest(
   actor: { uid: string; email: string },
   adminNote?: string
 ): Promise<void> {
-  await updateDoc(doc(db, PLAN_REQUESTS_COLLECTION, request.id), {
+  await updateDoc(doc(adminDb, PLAN_REQUESTS_COLLECTION, request.id), {
     status: "rejected" as PlanRequestStatus,
     reviewedAt: new Date().toISOString(),
     reviewedBy: actor.email || actor.uid,
@@ -175,7 +180,7 @@ export async function rejectPlanRequest(
 export async function getPlanRequests(): Promise<PlanRequest[]> {
   try {
     const snap = await getDocs(
-      query(collection(db, PLAN_REQUESTS_COLLECTION), orderBy("createdAt", "desc"))
+      query(collection(adminDb, PLAN_REQUESTS_COLLECTION), orderBy("createdAt", "desc"))
     )
     return snap.docs.map((d) => ({ id: d.id, ...d.data() })) as PlanRequest[]
   } catch (err) {

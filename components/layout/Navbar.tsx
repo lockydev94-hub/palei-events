@@ -1,13 +1,163 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { navLinks } from "@/data/site";
 import { MobileMenu } from "./MobileMenu";
 import { Logo } from "./Logo";
 import { CallbackModal } from "@/components/ui/CallbackModal";
+import { usePublicCustomer } from "./usePublicCustomer";
+
+/* ── helpers ──────────────────────────────────────────── */
+function initials(nameOrEmail: string | null): string {
+  if (!nameOrEmail) return "?";
+  const parts = nameOrEmail.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || parts[0]?.[1] || "")).toUpperCase() || "?";
+}
+
+/** Desktop account dropdown for the signed-in customer. */
+function AccountMenu() {
+  const { user, signOutPublic } = usePublicCustomer();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, []);
+
+  if (!user) return null;
+
+  async function handleSignOut() {
+    setOpen(false);
+    await signOutPublic();
+    router.replace("/");
+  }
+
+  const items = [
+    { href: "/dashboard", label: "Dashboard", hint: "Overview & activity" },
+    { href: "/dashboard/events", label: "My Events", hint: "Create & manage event pages" },
+    { href: "/dashboard/plan", label: "Plan & Billing", hint: user.plan === "free" ? "Choose your plan" : "Manage your subscription" },
+    { href: "/dashboard/profile", label: "Profile", hint: "Account settings" },
+  ];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="group flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-all duration-200"
+        style={{
+          border: open ? "1px solid rgba(200,155,60,0.45)" : "1px solid rgba(255,255,255,0.14)",
+          background: open ? "rgba(200,155,60,0.10)" : "rgba(255,255,255,0.04)",
+        }}
+      >
+        {user.photoURL ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={user.photoURL} alt="" className="h-7 w-7 rounded-lg object-cover" />
+        ) : (
+          <span
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[0.62rem] font-bold"
+            style={{ background: "linear-gradient(135deg, #c89b3c, #a67f2e)", color: "#0f1522" }}
+          >
+            {initials(user.displayName || user.email)}
+          </span>
+        )}
+        <span className="hidden max-w-[120px] truncate text-[0.8rem] font-medium text-ivory/85 xl:block">
+          {user.displayName || user.email?.split("@")[0]}
+        <span className="block text-[0.55rem] uppercase tracking-[0.14em]" style={{ color: "#e0c584" }}>
+            {user.plan === "free" ? "No plan" : `${user.plan} plan`}
+          </span>
+        </span>
+        <svg
+          className={cn("h-3 w-3 transition-transform duration-200", open && "rotate-180")}
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="rgba(255,253,248,0.5)"
+          strokeWidth="1.6"
+          aria-hidden
+        >
+          <path d="M2.5 4.5L6 8l3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+10px)] w-64 overflow-hidden rounded-2xl"
+          style={{
+            background: "linear-gradient(180deg, #10192a 0%, #172033 100%)",
+            border: "1px solid rgba(200,155,60,0.25)",
+            boxShadow: "0 24px 60px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(200,155,60,0.12) inset",
+          }}
+        >
+          {/* identity block */}
+          <div className="border-b border-white/[0.07] px-4 py-3.5">
+            <p className="truncate text-[0.84rem] font-semibold text-ivory">
+              {user.displayName || user.email?.split("@")[0] || "Customer"}
+            </p>
+            <p className="mt-0.5 truncate text-[0.7rem] text-ivory/45">{user.email}</p>
+            <span
+              className="mt-2 inline-block rounded-full px-2.5 py-0.5 text-[0.58rem] font-bold uppercase tracking-[0.14em]"
+              style={{
+                background: user.plan === "free" ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)",
+                color: user.plan === "free" ? "#fbbf24" : "#34d399",
+              }}
+            >
+              {user.plan === "free" ? "No plan yet" : `${user.plan} plan`}
+            </span>
+          </div>
+          {/* links */}
+          <div className="p-1.5">
+            {items.map(({ href, label, hint }) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setOpen(false)}
+                role="menuitem"
+                className="block rounded-xl px-3.5 py-2.5 transition-colors duration-150 hover:bg-white/[0.06]"
+              >
+                <span className="block text-[0.82rem] font-medium text-ivory/85">{label}</span>
+                <span className="mt-0.5 block text-[0.66rem] text-ivory/40">{hint}</span>
+              </Link>
+            ))}
+          </div>
+          {/* sign out */}
+          <div className="border-t border-white/[0.07] p-1.5">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleSignOut}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-red-500/10"
+              style={{ color: "#fca5a5" }}
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+              </svg>
+              <span className="text-[0.82rem] font-medium">Sign out</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export { Logo };
 
@@ -92,6 +242,20 @@ export function Navbar() {
 
           {/* Desktop actions */}
           <div className="hidden items-center gap-2.5 lg:flex">
+            {/* Customer account menu (Login link hides while signed in) */}
+            <AccountMenu />
+
+            <Link
+              href="/login"
+              className={cn(
+                "px-3.5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200",
+                glassy
+                  ? "text-ivory/75 hover:text-ivory"
+                  : "text-ivory/85 hover:text-ivory"
+              )}
+            >
+              <PublicLoginLabel />
+            </Link>
             {/* Request Callback */}
             <button
               type="button"
@@ -118,18 +282,6 @@ export function Navbar() {
               </svg>
               Call Back
             </button>
-
-            <Link
-              href="/login"
-              className={cn(
-                "px-3.5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200",
-                glassy
-                  ? "text-ivory/75 hover:text-ivory"
-                  : "text-ivory/85 hover:text-ivory"
-              )}
-            >
-              Login
-            </Link>
 
             <Link
               href="/create-event"
@@ -238,4 +390,11 @@ export function Navbar() {
       <CallbackModal open={callbackOpen} onClose={() => setCallbackOpen(false)} />
     </>
   );
+}
+
+/** Login label that hides while the customer session is active. */
+function PublicLoginLabel() {
+  const { user, loading } = usePublicCustomer();
+  if (loading || user) return <span className="invisible">Login</span>;
+  return <span>Login</span>;
 }

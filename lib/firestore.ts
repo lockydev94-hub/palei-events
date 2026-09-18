@@ -28,10 +28,22 @@ import {
   serverTimestamp,
   Timestamp,
   type FieldValue,
+  type Firestore,
 } from "firebase/firestore"
-import { db } from "./firebase"
+import { db as publicDb, adminDb } from "./firebase"
 
 // ── Types ──────────────────────────────────────────────────────
+/**
+ * Which session's credentials a Firestore call should use.
+ *
+ * The admin console and the customer portal hold SEPARATE Firebase Auth
+ * sessions (separate app instances in lib/firebase.ts), so every operation
+ * must be routed through the right one — an admin billing action run with a
+ * customer token would fail the rules with "Missing or insufficient
+ * permissions", and public reads must stay on the public session.
+ */
+export type FirestoreContext = "public" | "admin"
+
 import type { Event, EventType } from "@/data/events"
 import type { Template } from "@/data/templates"
 import type { Template as TemplateType } from "@/data/templates"
@@ -98,6 +110,8 @@ export interface AuditActor {
 interface WriteOptions {
   /** When provided, every mutation writes an audit-log entry. */
   actor?: AuditActor | null
+  /** Which session to run with — admin pages pass "admin" here. */
+  ctx?: FirestoreContext
 }
 
 /**
@@ -142,9 +156,13 @@ async function bumpMetadata(
   }
 }
 
-/** Best-effort audit log; never throws so it can't break the main write. */
+/**
+ * Best-effort audit log; never throws so it can't break the main write.
+ * Audit entries are admin-console artifacts — the rules only allow writes
+ * with the admin claim, so this always runs on the admin session.
+ */
 async function safeAudit(
-  collection: string,
+  collectionName: string,
   documentId: string,
   action: string,
   actor: AuditActor | null | undefined,
@@ -153,12 +171,12 @@ async function safeAudit(
 ) {
   if (!actor) return
   try {
-    const ref = doc(collectionRef("auditLogs"))
+    const ref = doc(collection(adminDb, "auditLogs"))
     await setDoc(ref, stripUndefined({
       actor: actor.email || actor.uid,
       actorId: actor.uid,
       action,
-      collection,
+      collection: collectionName,
       documentId,
       before: before ?? null,
       after: after ?? null,
@@ -169,10 +187,19 @@ async function safeAudit(
   }
 }
 
-// Re-export collection() typed loosely so safeAudit can call it without
-// triggering an unused-import warning on the public collection() helper.
-function collectionRef(name: string) {
-  return collection(db, name)
+/**
+ * Resolve the Firestore instance for a call site.
+ *
+ * "public" → the default app's session (customer portal / anonymous).
+ * "admin"  → the admin console's session (separate Firebase app — both
+ *             sessions can coexist in one browser; see lib/firebase.ts).
+ *
+ * Every helper below binds a local `const db = dbFor(opts?.ctx ?? ctx)` — refs and
+ * queries created from it carry the right credentials for all reads,
+ * writes and listener results.
+ */
+function dbFor(ctx: FirestoreContext): Firestore {
+  return ctx === "admin" ? adminDb : publicDb
 }
 
 // ── Events ─────────────────────────────────────────────────────
@@ -198,7 +225,8 @@ export type { BlogPostType as BlogPost, TemplateType as Template, FeatureType as
 
 const EVENTS_COLLECTION = "events"
 
-export async function getEvents(status?: string): Promise<FirestoreEvent[]> {
+export async function getEvents(status?: string, ctx: FirestoreContext = "public"): Promise<FirestoreEvent[]> {
+  const db = dbFor(ctx)
   try {
     let q
     if (status) {
@@ -225,7 +253,8 @@ export async function getEvents(status?: string): Promise<FirestoreEvent[]> {
   }
 }
 
-export async function getEventBySlug(slug: string): Promise<FirestoreEvent | null> {
+export async function getEventBySlug(slug: string, ctx: FirestoreContext = "public"): Promise<FirestoreEvent | null> {
+  const db = dbFor(ctx)
   try {
     // IMPORTANT: filter by status here. Firestore security rules reject any
     // list query that *could* return a draft for a caller without the admin
@@ -251,7 +280,8 @@ export async function getEventBySlug(slug: string): Promise<FirestoreEvent | nul
   }
 }
 
-export async function getEventById(id: string): Promise<FirestoreEvent | null> {
+export async function getEventById(id: string, ctx: FirestoreContext = "public"): Promise<FirestoreEvent | null> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDoc(doc(db, EVENTS_COLLECTION, id))
     if (snap.exists()) {
@@ -265,9 +295,8 @@ export async function getEventById(id: string): Promise<FirestoreEvent | null> {
 }
 
 export async function createEvent(
-  event: Partial<FirestoreEvent>,
-  opts: WriteOptions = {}
-): Promise<string> {
+  event: Partial<FirestoreEvent>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<string> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(collection(db, EVENTS_COLLECTION))
   const body = stripUndefined({
     ...stripClientFields(event as Record<string, any>),
@@ -289,9 +318,8 @@ export async function createEvent(
 
 export async function updateEvent(
   id: string,
-  data: Partial<FirestoreEvent>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Partial<FirestoreEvent>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, EVENTS_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   const meta = await bumpMetadata(ref)
@@ -316,9 +344,8 @@ export async function updateEvent(
 }
 
 export async function deleteEvent(
-  id: string,
-  opts: WriteOptions = {}
-): Promise<void> {
+  id: string,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, EVENTS_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   await deleteDoc(ref)
@@ -329,7 +356,8 @@ export async function deleteEvent(
 
 const TEMPLATES_COLLECTION = "templates"
 
-export async function getTemplates(category?: string): Promise<Template[]> {
+export async function getTemplates(category?: string, ctx: FirestoreContext = "public"): Promise<Template[]> {
+  const db = dbFor(ctx)
   try {
     let q
     if (category && category !== "All") {
@@ -349,7 +377,8 @@ export async function getTemplates(category?: string): Promise<Template[]> {
   }
 }
 
-export async function getTemplateById(id: string): Promise<Template | null> {
+export async function getTemplateById(id: string, ctx: FirestoreContext = "public"): Promise<Template | null> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDoc(doc(db, TEMPLATES_COLLECTION, id))
     if (snap.exists()) return { id: snap.id, ...snap.data() } as Template
@@ -360,9 +389,8 @@ export async function getTemplateById(id: string): Promise<Template | null> {
 }
 
 export async function createTemplate(
-  template: Partial<Template>,
-  opts: WriteOptions = {}
-): Promise<string> {
+  template: Partial<Template>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<string> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(collection(db, TEMPLATES_COLLECTION))
   const body = stripUndefined({
     ...stripClientFields(template as Record<string, any>),
@@ -376,9 +404,8 @@ export async function createTemplate(
 
 export async function updateTemplate(
   id: string,
-  data: Partial<Template>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Partial<Template>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, TEMPLATES_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   const body = stripUndefined({
@@ -390,9 +417,8 @@ export async function updateTemplate(
 }
 
 export async function deleteTemplate(
-  id: string,
-  opts: WriteOptions = {}
-): Promise<void> {
+  id: string,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, TEMPLATES_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   await deleteDoc(ref)
@@ -403,7 +429,8 @@ export async function deleteTemplate(
 
 const BLOG_COLLECTION = "blogPosts"
 
-export async function getBlogPosts(status?: string): Promise<FirestoreBlogPost[]> {
+export async function getBlogPosts(status?: string, ctx: FirestoreContext = "public"): Promise<FirestoreBlogPost[]> {
+  const db = dbFor(ctx)
   try {
     let q
     if (status) {
@@ -434,7 +461,8 @@ export async function getBlogPosts(status?: string): Promise<FirestoreBlogPost[]
   }
 }
 
-export async function getBlogPostBySlug(slug: string): Promise<FirestoreBlogPost | null> {
+export async function getBlogPostBySlug(slug: string, ctx: FirestoreContext = "public"): Promise<FirestoreBlogPost | null> {
+  const db = dbFor(ctx)
   try {
     const q = query(
       collection(db, BLOG_COLLECTION),
@@ -453,9 +481,8 @@ export async function getBlogPostBySlug(slug: string): Promise<FirestoreBlogPost
 }
 
 export async function createBlogPost(
-  post: Partial<FirestoreBlogPost>,
-  opts: WriteOptions = {}
-): Promise<string> {
+  post: Partial<FirestoreBlogPost>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<string> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(collection(db, BLOG_COLLECTION))
   const body = stripUndefined({
     ...stripClientFields(post as Record<string, any>),
@@ -469,9 +496,8 @@ export async function createBlogPost(
 
 export async function updateBlogPost(
   id: string,
-  data: Partial<FirestoreBlogPost>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Partial<FirestoreBlogPost>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, BLOG_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   const body = stripUndefined({
@@ -483,9 +509,8 @@ export async function updateBlogPost(
 }
 
 export async function deleteBlogPost(
-  id: string,
-  opts: WriteOptions = {}
-): Promise<void> {
+  id: string,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, BLOG_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   await deleteDoc(ref)
@@ -496,7 +521,8 @@ export async function deleteBlogPost(
 
 const FEATURES_COLLECTION = "features"
 
-export async function getFeatures(): Promise<FeatureType[]> {
+export async function getFeatures(ctx: FirestoreContext = "public"): Promise<FeatureType[]> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDocs(collection(db, FEATURES_COLLECTION))
     if (snap.empty) return features
@@ -517,9 +543,8 @@ export async function getFeatures(): Promise<FeatureType[]> {
  * that array atomically and bump metadata.version.
  */
 export async function updateFeatures(
-  items: FeatureType[],
-  opts: WriteOptions = {}
-): Promise<void> {
+  items: FeatureType[],opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, FEATURES_COLLECTION, "current")
   const before = (await getDoc(ref)).data() ?? null
   const body = stripUndefined({
@@ -534,7 +559,8 @@ export async function updateFeatures(
 
 const PRICING_COLLECTION = "pricingPlans"
 
-export async function getPricingPlans(): Promise<PricingPlanType[]> {
+export async function getPricingPlans(ctx: FirestoreContext = "public"): Promise<PricingPlanType[]> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDocs(collection(db, PRICING_COLLECTION))
     if (snap.empty) return pricingPlans
@@ -546,9 +572,8 @@ export async function getPricingPlans(): Promise<PricingPlanType[]> {
 }
 
 export async function createPricingPlan(
-  plan: Partial<PricingPlanType>,
-  opts: WriteOptions = {}
-): Promise<string> {
+  plan: Partial<PricingPlanType>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<string> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(collection(db, PRICING_COLLECTION))
   const body = stripUndefined({
     ...stripClientFields(plan as Record<string, any>),
@@ -561,9 +586,8 @@ export async function createPricingPlan(
 
 export async function updatePricingPlan(
   id: string,
-  data: Partial<PricingPlanType>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Partial<PricingPlanType>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, PRICING_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   const body = stripUndefined({
@@ -575,9 +599,8 @@ export async function updatePricingPlan(
 }
 
 export async function deletePricingPlan(
-  id: string,
-  opts: WriteOptions = {}
-): Promise<void> {
+  id: string,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, PRICING_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   await deleteDoc(ref)
@@ -598,7 +621,8 @@ const SOLUTIONS_DOC_ID = "current"
  * that was the schema drift the audit flagged. Reading + writing are
  * aligned now.)
  */
-export async function getSolutions(): Promise<SolutionType[]> {
+export async function getSolutions(ctx: FirestoreContext = "public"): Promise<SolutionType[]> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDoc(doc(db, SOLUTIONS_COLLECTION, SOLUTIONS_DOC_ID))
     if (snap.exists()) {
@@ -613,9 +637,8 @@ export async function getSolutions(): Promise<SolutionType[]> {
 }
 
 export async function updateSolutions(
-  items: SolutionType[],
-  opts: WriteOptions = {}
-): Promise<void> {
+  items: SolutionType[],opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, SOLUTIONS_COLLECTION, SOLUTIONS_DOC_ID)
   const before = (await getDoc(ref)).data() ?? null
   const body = stripUndefined({
@@ -642,7 +665,8 @@ export interface UserProfile {
 
 const USERS_COLLECTION = "users"
 
-export async function getUsers(): Promise<UserProfile[]> {
+export async function getUsers(ctx: FirestoreContext = "public"): Promise<UserProfile[]> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDocs(collection(db, USERS_COLLECTION))
     return snap.docs.map((d) => ({ uid: d.id, ...d.data() })) as UserProfile[]
@@ -652,7 +676,8 @@ export async function getUsers(): Promise<UserProfile[]> {
   }
 }
 
-export async function getUser(uid: string): Promise<UserProfile | null> {
+export async function getUser(uid: string, ctx: FirestoreContext = "public"): Promise<UserProfile | null> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDoc(doc(db, USERS_COLLECTION, uid))
     if (snap.exists()) return { uid: snap.id, ...snap.data() } as UserProfile
@@ -664,9 +689,8 @@ export async function getUser(uid: string): Promise<UserProfile | null> {
 
 export async function updateUser(
   uid: string,
-  data: Partial<UserProfile>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Partial<UserProfile>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, USERS_COLLECTION, uid)
   const before = (await getDoc(ref)).data() ?? null
   const body = stripUndefined({
@@ -682,7 +706,8 @@ export async function updateUser(
 const PROJECT_COLLECTION = "projects"
 const PROJECT_DOC_ID = "current"
 
-export async function getSiteSettings() {
+export async function getSiteSettings(ctx: FirestoreContext = "public") {
+  const db = dbFor(ctx)
   try {
     const snap = await getDoc(doc(db, PROJECT_COLLECTION, PROJECT_DOC_ID))
     if (snap.exists()) return snap.data()
@@ -694,9 +719,8 @@ export async function getSiteSettings() {
 }
 
 export async function updateSiteSettings(
-  data: Record<string, any>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Record<string, any>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, PROJECT_COLLECTION, PROJECT_DOC_ID)
   const before = (await getDoc(ref)).data() ?? null
   // site.ts has extra fields the schema (01 §2.1) doesn't define
@@ -735,7 +759,8 @@ export interface AuditLog {
 
 const AUDIT_COLLECTION = "auditLogs"
 
-export async function getAuditLogs(limitCount: number = 50): Promise<AuditLog[]> {
+export async function getAuditLogs(limitCount: number = 50, ctx: FirestoreContext = "public"): Promise<AuditLog[]> {
+  const db = dbFor(ctx)
   try {
     const q = query(
       collection(db, AUDIT_COLLECTION),
@@ -755,8 +780,7 @@ export async function getAuditLogs(limitCount: number = 50): Promise<AuditLog[]>
  * create/update/delete functions above, but this is exposed for one-off
  * admin actions (e.g. "feature flag flipped" where no doc is being changed).
  */
-export async function logAudit(
-  entry: {
+export async function logAudit(entry: {
     actor: AuditActor | string
     actorId?: string
     action: string
@@ -764,8 +788,8 @@ export async function logAudit(
     documentId: string
     before?: any
     after?: any
-  }
-): Promise<void> {
+  }, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(ctx)
   const ref = doc(collection(db, AUDIT_COLLECTION))
   const { actor, actorId, ...rest } = entry
   const actorStr = typeof actor === "string" ? actor : actor.email || actor.uid
@@ -796,7 +820,8 @@ export interface Announcement {
 
 const ANNOUNCEMENTS_COLLECTION = "announcements"
 
-export async function getActiveAnnouncements(now: Date = new Date()): Promise<Announcement[]> {
+export async function getActiveAnnouncements(now: Date = new Date(), ctx: FirestoreContext = "public"): Promise<Announcement[]> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDocs(collection(db, ANNOUNCEMENTS_COLLECTION))
     if (snap.empty) return []
@@ -815,9 +840,8 @@ export async function getActiveAnnouncements(now: Date = new Date()): Promise<An
 }
 
 export async function createAnnouncement(
-  a: Partial<Announcement>,
-  opts: WriteOptions = {}
-): Promise<string> {
+  a: Partial<Announcement>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<string> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(collection(db, ANNOUNCEMENTS_COLLECTION))
   const body = stripUndefined({
     ...stripClientFields(a as Record<string, any>),
@@ -833,9 +857,8 @@ export async function createAnnouncement(
 
 export async function updateAnnouncement(
   id: string,
-  data: Partial<Announcement>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Partial<Announcement>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, ANNOUNCEMENTS_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   const body = stripUndefined({
@@ -847,9 +870,8 @@ export async function updateAnnouncement(
 }
 
 export async function deleteAnnouncement(
-  id: string,
-  opts: WriteOptions = {}
-): Promise<void> {
+  id: string,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, ANNOUNCEMENTS_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   await deleteDoc(ref)
@@ -863,9 +885,8 @@ export async function deleteAnnouncement(
  * idempotent and we don't lose anyone in the race.
  */
 export async function recordAnnouncementDismissal(
-  id: string,
-  uid: string
-): Promise<void> {
+  id: string,uid: string, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(ctx)
   if (!uid) return
   try {
     const { arrayUnion } = await import("firebase/firestore")
@@ -894,7 +915,8 @@ export interface Campaign {
 
 const CAMPAIGNS_COLLECTION = "campaigns"
 
-export async function getCampaigns(): Promise<Campaign[]> {
+export async function getCampaigns(ctx: FirestoreContext = "public"): Promise<Campaign[]> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDocs(collection(db, CAMPAIGNS_COLLECTION))
     return snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Campaign[]
@@ -904,9 +926,8 @@ export async function getCampaigns(): Promise<Campaign[]> {
 }
 
 export async function createCampaign(
-  c: Partial<Campaign>,
-  opts: WriteOptions = {}
-): Promise<string> {
+  c: Partial<Campaign>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<string> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(collection(db, CAMPAIGNS_COLLECTION))
   const body = stripUndefined({
     ...stripClientFields(c as Record<string, any>),
@@ -922,9 +943,8 @@ export async function createCampaign(
 
 export async function updateCampaign(
   id: string,
-  data: Partial<Campaign>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Partial<Campaign>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, CAMPAIGNS_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   const body = stripUndefined({
@@ -936,9 +956,8 @@ export async function updateCampaign(
 }
 
 export async function deleteCampaign(
-  id: string,
-  opts: WriteOptions = {}
-): Promise<void> {
+  id: string,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, CAMPAIGNS_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   await deleteDoc(ref)
@@ -964,7 +983,8 @@ export interface Subscription {
 
 const SUBS_COLLECTION = "subscriptions"
 
-export async function getSubscriptions(): Promise<Subscription[]> {
+export async function getSubscriptions(ctx: FirestoreContext = "public"): Promise<Subscription[]> {
+  const db = dbFor(ctx)
   try {
     const snap = await getDocs(collection(db, SUBS_COLLECTION))
     return snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Subscription[]
@@ -974,9 +994,8 @@ export async function getSubscriptions(): Promise<Subscription[]> {
 }
 
 export async function createSubscription(
-  s: Partial<Subscription>,
-  opts: WriteOptions = {}
-): Promise<string> {
+  s: Partial<Subscription>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<string> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(collection(db, SUBS_COLLECTION))
   const now = new Date().toISOString()
   const body = stripUndefined({
@@ -994,9 +1013,8 @@ export async function createSubscription(
 
 export async function updateSubscription(
   id: string,
-  data: Partial<Subscription>,
-  opts: WriteOptions = {}
-): Promise<void> {
+  data: Partial<Subscription>,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   const ref = doc(db, SUBS_COLLECTION, id)
   const before = (await getDoc(ref)).data() ?? null
   const current = Number(before?.metadata?.version ?? 0)
@@ -1010,8 +1028,7 @@ export async function updateSubscription(
 }
 
 export async function cancelSubscription(
-  id: string,
-  opts: WriteOptions = {}
-): Promise<void> {
+  id: string,opts: WriteOptions = {}, ctx: FirestoreContext = "public"): Promise<void> {
+  const db = dbFor(opts?.ctx ?? ctx)
   await updateSubscription(id, { status: "canceled", cancelAtPeriodEnd: true }, opts)
 }

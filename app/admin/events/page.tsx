@@ -34,7 +34,7 @@ export default function EventsPage() {
   async function loadEvents() {
     setLoading(true)
     try {
-      const data = await getEvents()
+      const data = await getEvents("admin")
       setEvents(data)
     } catch (err) {
       console.error("Failed to load events:", err)
@@ -58,6 +58,7 @@ export default function EventsPage() {
     try {
       await deleteEvent(id, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
       setEvents((prev) => prev.filter((e) => e.id !== id))
     } catch (err) {

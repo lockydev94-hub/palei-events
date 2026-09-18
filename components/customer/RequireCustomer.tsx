@@ -6,13 +6,18 @@
  *  1. Loading  → gold spinner (no redirect flash)
  *  2. Logged out → /login?next=…
  *  3. Admin    → bounced to the admin console (admins don't use this portal)
- *  4. Approved plan → children
- *  5. Free / pending plan → PlanGate (request UI) instead of the dashboard
+ *  4. Approved plan → children (full dashboard)
+ *  5. Free plan → children ONLY on the status surfaces (/dashboard,
+ *     /dashboard/plan, /dashboard/profile) where they see their requested
+ *     plan details; feature pages (events, rsvps, wishes) redirect there —
+ *     features unlock the moment the admin activates the plan.
  */
 import { useEffect, type ReactNode } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { useCustomerAuth } from "./CustomerAuthContext"
-import { PlanGate } from "./PlanGate"
+
+/** Pages a free customer can open while waiting for plan activation. */
+export const PLAN_GATED_ROUTES = ["/dashboard", "/dashboard/plan", "/dashboard/profile"]
 
 export function RequireCustomer({ children }: { children: ReactNode }) {
   const { user, loading } = useCustomerAuth()
@@ -53,10 +58,26 @@ export function RequireCustomer({ children }: { children: ReactNode }) {
     return null
   }
 
-  // The plan gate: free customers only see the plan request surface.
+  // Plan gate: free customers may open the status surfaces only.
   if (user.plan === "free") {
-    return <PlanGate />
+    const allowed =
+      pathname === "/dashboard" ||
+      pathname.startsWith("/dashboard/plan") ||
+      pathname.startsWith("/dashboard/profile")
+    if (!allowed) {
+      // Feature page while unapproved → show the status surface instead.
+      return <LockedRedirect target="/dashboard" />
+    }
   }
 
   return <>{children}</>
+}
+
+/** Soft redirect that renders nothing until navigation completes. */
+function LockedRedirect({ target }: { target: string }) {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace(target)
+  }, [router, target])
+  return null
 }

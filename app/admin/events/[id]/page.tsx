@@ -53,6 +53,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
     try {
       await deleteEvent(id, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
       router.replace("/admin/events")
     } catch (err: any) {

@@ -57,7 +57,7 @@ export default function BillingPage() {
   async function load() {
     setLoading(true)
     try {
-      const [s, u] = await Promise.all([getSubscriptions(), getUsers()])
+      const [s, u] = await Promise.all([getSubscriptions("admin"), getUsers("admin")])
       setSubs(s)
       setUsers(u)
     } catch (err) {
@@ -130,6 +130,7 @@ export default function BillingPage() {
     try {
       await updateSubscription(editing.id, editing, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
       setSubs((prev) => prev.map((s) => (s.id === editing.id ? editing : s)))
       setEditing(null)
@@ -145,6 +146,7 @@ export default function BillingPage() {
     try {
       await cancelSubscription(sub.id, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
       setSubs((prev) =>
         prev.map((s) => (s.id === sub.id ? { ...s, status: "canceled", cancelAtPeriodEnd: true } : s))

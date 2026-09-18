@@ -60,10 +60,10 @@ export default function ContentPage() {
     async function load() {
       try {
         const [blogs, feats, pricing, sols] = await Promise.all([
-          getBlogPosts(),
-          getFeatures(),
-          getPricingPlans(),
-          getSolutions(),
+          getBlogPosts("admin"),
+          getFeatures("admin"),
+          getPricingPlans("admin"),
+          getSolutions("admin"),
         ])
         setBlogPosts(blogs)
         setFeaturesList(feats)
@@ -89,7 +89,7 @@ export default function ContentPage() {
   async function handleDeleteBlog(id: string) {
     if (!confirm("Delete this blog post? This is permanent.")) return
     try {
-      await deleteBlogPost(id, { actor: user ? { uid: user.uid, email: user.email } : undefined })
+      await deleteBlogPost(id, { actor: user ? { uid: user.uid, email: user.email } : undefined, ctx: "admin" })
       setBlogPosts((prev) => prev.filter((p) => p.id !== id))
     } catch (err) {
       console.error("Failed to delete blog post:", err)
@@ -123,12 +123,12 @@ export default function ContentPage() {
     try {
       const actor = user ? { uid: user.uid, email: user.email } : undefined
       if (modal.id) {
-        await updateBlogPost(modal.id, modal.post, { actor })
+        await updateBlogPost(modal.id, modal.post, { actor, ctx: "admin" })
         setBlogPosts((prev) =>
           prev.map((p) => (p.id === modal.id ? { ...p, ...(modal.post as FirestoreBlogPost) } : p))
         )
       } else {
-        const id = await createBlogPost(modal.post, { actor })
+        const id = await createBlogPost(modal.post, { actor, ctx: "admin" })
         setBlogPosts((prev) => [...prev, { ...(modal.post as FirestoreBlogPost), id }])
       }
       setModal(null)
@@ -143,7 +143,7 @@ export default function ContentPage() {
   async function handleDeletePricing(id: string) {
     if (!confirm("Delete this pricing plan?")) return
     try {
-      await deletePricingPlan(id, { actor: user ? { uid: user.uid, email: user.email } : undefined })
+      await deletePricingPlan(id, { actor: user ? { uid: user.uid, email: user.email } : undefined, ctx: "admin" })
       setPricingList((prev) => prev.filter((p) => p.id !== id))
     } catch (err) {
       console.error("Failed to delete pricing plan:", err)
@@ -176,12 +176,12 @@ export default function ContentPage() {
     try {
       const actor = user ? { uid: user.uid, email: user.email } : undefined
       if (modal.id) {
-        await updatePricingPlan(modal.id, modal.plan, { actor })
+        await updatePricingPlan(modal.id, modal.plan, { actor, ctx: "admin" })
         setPricingList((prev) =>
           prev.map((p) => (p.id === modal.id ? { ...p, ...(modal.plan as PricingPlan) } : p))
         )
       } else {
-        const id = await createPricingPlan(modal.plan, { actor })
+        const id = await createPricingPlan(modal.plan, { actor, ctx: "admin" })
         setPricingList((prev) => [...prev, { ...(modal.plan as PricingPlan), id }])
       }
       setModal(null)
@@ -199,6 +199,7 @@ export default function ContentPage() {
     try {
       await updateFeatures(featuresList, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
     } catch (err: any) {
       setError(err.message || "Save failed")
@@ -214,6 +215,7 @@ export default function ContentPage() {
     try {
       await updateSolutions(solutionsList, {
         actor: user ? { uid: user.uid, email: user.email } : undefined,
+      ctx: "admin",
       })
     } catch (err: any) {
       setError(err.message || "Save failed")

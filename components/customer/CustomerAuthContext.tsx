@@ -27,7 +27,14 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth"
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore"
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
 
 export interface CustomerUser {
@@ -186,6 +193,28 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
     })
     return () => unsub()
   }, [])
+
+  // Live profile subscription: when the admin approves a plan request the
+  // rules-side write lands on users/{uid}.plan and this listener flips the
+  // portal open instantly (no manual refresh, no re-login).
+  const profileUid = user?.uid
+  useEffect(() => {
+    if (!profileUid) return
+    const ref = doc(db, "users", profileUid)
+    const unsubProfile = onSnapshot(
+      ref,
+      (snap) => {
+        const plan = (snap.data() as { plan?: string } | undefined)?.plan
+        if (plan) {
+          setUser((prev) =>
+            prev && prev.plan !== plan ? { ...prev, plan } : prev
+          )
+        }
+      },
+      (err) => console.warn("[customer-auth] profile listener:", err)
+    )
+    return () => unsubProfile()
+  }, [profileUid])
 
   const login = useCallback(
     async (email: string, password: string): Promise<CustomerUser> => {
