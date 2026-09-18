@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { FirebaseError } from "firebase/app";
+import { useCustomerAuth } from "@/components/customer/CustomerAuthContext";
 
 const GOLD = "#c89b3c";
 const GOLD_LIGHT = "#e0c584";
@@ -31,16 +34,107 @@ function EyeIcon({ open }: { open: boolean }) {
   );
 }
 
+function friendlyAuthError(err: unknown): string {
+  const code = err instanceof FirebaseError ? err.code : "";
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Incorrect email or password.";
+    case "auth/email-already-in-use":
+      return "An account with this email already exists — try logging in.";
+    case "auth/weak-password":
+      return "Password is too weak (use at least 6 characters).";
+    case "auth/invalid-email":
+      return "That email address doesn't look right.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Please wait a moment and try again.";
+    case "auth/popup-closed-by-user":
+      return "Google sign-in was cancelled.";
+    case "auth/network-request-failed":
+      return "Network error — check your connection and retry.";
+    default:
+      return err instanceof Error && err.message
+        ? err.message
+        : "Something went wrong. Please try again.";
+  }
+}
+
+type Mode = "login" | "register" | "forgot";
+
 export function LoginPageClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { login, register, loginWithGoogle, resetPassword } = useCustomerAuth();
+
+  const [mode, setMode] = useState<Mode>("login");
   const [showPass, setShowPass] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [focused, setFocused] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    alert("Login will be available at launch.");
+  async function afterAuth(isAdmin: boolean) {
+    // Admins land in the admin console; everyone else on the customer
+    // dashboard (which itself gates un-approved plans).
+    const next = searchParams.get("next");
+    if (next && next.startsWith("/")) {
+      router.replace(next);
+    } else if (isAdmin) {
+      router.replace("/admin/dashboard");
+    } else {
+      router.replace("/dashboard");
+    }
   }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      if (mode === "login") {
+        const u = await login(email, password);
+        await afterAuth(u.isAdmin);
+      } else if (mode === "register") {
+        const u = await register(name, email, password);
+        await afterAuth(u.isAdmin);
+      } else {
+        await resetPassword(email);
+        setNotice("Password reset email sent — check your inbox.");
+      }
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleGoogle() {
+    setError(null);
+    setBusy(true);
+    try {
+      const u = await loginWithGoogle();
+      await afterAuth(u.isAdmin);
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const inputClass =
+    "w-full rounded-2xl pl-11 pr-4 py-3.5 text-[0.93rem] outline-none transition-all duration-200";
+  const inputStyle = (field: string) => ({
+    background: "rgba(255,253,248,0.06)",
+    border: focused === field ? `1px solid ${GOLD}80` : "1px solid rgba(255,253,248,0.12)",
+    color: "#fffdf8",
+    boxShadow: focused === field ? "0 0 0 3px rgba(200,155,60,0.12)" : "none",
+    caretColor: GOLD,
+  });
 
   return (
     <div
@@ -48,7 +142,6 @@ export function LoginPageClient() {
       style={{ background: `linear-gradient(160deg, ${NAVY_DARK} 0%, ${NAVY} 100%)` }}
     >
       {/* ── Background decoration ── */}
-      {/* Gold bloom — top right */}
       <div
         className="absolute -top-48 -right-48 pointer-events-none"
         style={{
@@ -58,7 +151,6 @@ export function LoginPageClient() {
         }}
         aria-hidden
       />
-      {/* Purple depth — bottom left */}
       <div
         className="absolute -bottom-40 -left-40 pointer-events-none"
         style={{
@@ -68,7 +160,6 @@ export function LoginPageClient() {
         }}
         aria-hidden
       />
-      {/* Dot grid */}
       <div
         className="absolute inset-0 pointer-events-none opacity-[0.045]"
         style={{
@@ -78,23 +169,11 @@ export function LoginPageClient() {
         }}
         aria-hidden
       />
-      {/* Diagonal beam */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          top: "10%", left: "30%",
-          width: "1px", height: "60%",
-          background: "linear-gradient(to bottom, transparent, rgba(200,155,60,0.15) 40%, rgba(200,155,60,0.06) 70%, transparent)",
-          transform: "rotate(-15deg)",
-          filter: "blur(1px)",
-        }}
-        aria-hidden
-      />
 
       {/* ── Back to home link ── */}
       <Link
         href="/"
-        className="absolute top-8 left-8 inline-flex items-center gap-2 text-[0.8rem] font-medium transition-all duration-200 hover:-translate-x-0.5"
+        className="absolute top-8 left-8 inline-flex items-center gap-2 text-[0.8rem] font-medium transition-all duration-200 hover:-translate-x-0.5 z-20"
         style={{ color: "rgba(255,253,248,0.45)" }}
       >
         <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -106,8 +185,7 @@ export function LoginPageClient() {
       {/* ── Card ── */}
       <div className="relative z-10 w-full max-w-[440px] mx-auto px-4 py-10">
         {/* Logo / Brand mark */}
-        <div className="flex flex-col items-center mb-10">
-          {/* Decorative ring */}
+        <div className="flex flex-col items-center mb-8">
           <div
             className="flex items-center justify-center h-14 w-14 rounded-2xl mb-5"
             style={{
@@ -116,13 +194,9 @@ export function LoginPageClient() {
               boxShadow: "0 0 32px rgba(200,155,60,0.18)",
             }}
           >
-            <Sparkle
-              className="h-6 w-6"
-              style={{ color: GOLD_LIGHT } as React.CSSProperties}
-            />
+            <Sparkle className="h-6 w-6" style={{ color: GOLD_LIGHT } as React.CSSProperties} />
           </div>
 
-          {/* Brand name */}
           <span
             className="font-display font-bold text-[1.35rem] tracking-tight"
             style={{
@@ -134,23 +208,6 @@ export function LoginPageClient() {
           >
             Palei Events
           </span>
-
-          {/* Eyebrow */}
-          <div
-            className="mt-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5"
-            style={{
-              background: "rgba(200,155,60,0.10)",
-              border: "1px solid rgba(200,155,60,0.25)",
-            }}
-          >
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full rounded-full animate-ping opacity-40" style={{ background: GOLD }} />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full" style={{ background: GOLD_LIGHT }} />
-            </span>
-            <span className="text-[0.65rem] font-semibold uppercase tracking-[0.2em]" style={{ color: GOLD_LIGHT }}>
-              Secure Login
-            </span>
-          </div>
         </div>
 
         {/* Glass card */}
@@ -163,12 +220,9 @@ export function LoginPageClient() {
             boxShadow: "0 24px 80px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(200,155,60,0.12) inset",
           }}
         >
-          {/* Top shimmer line */}
           <div
             className="absolute top-0 inset-x-0 h-px pointer-events-none"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${GOLD}55, transparent)`,
-            }}
+            style={{ background: `linear-gradient(90deg, transparent, ${GOLD}55, transparent)` }}
             aria-hidden
           />
 
@@ -178,14 +232,82 @@ export function LoginPageClient() {
               className="font-display font-semibold leading-tight mb-1"
               style={{ fontSize: "1.75rem", color: "#fffdf8" }}
             >
-              Welcome back
+              {mode === "login" ? "Welcome back" : mode === "register" ? "Create your account" : "Reset password"}
             </h1>
-            <p className="text-[0.87rem] mb-8" style={{ color: "rgba(255,253,248,0.48)" }}>
-              Log in to manage your events, galleries and guests.
+            <p className="text-[0.87rem] mb-7" style={{ color: "rgba(255,253,248,0.48)" }}>
+              {mode === "login"
+                ? "Log in to manage your events, galleries and guests."
+                : mode === "register"
+                ? "Start free — pick a plan when you're ready to publish."
+                : "We'll email you a secure reset link."}
             </p>
+
+            {/* Error / notice */}
+            {error && (
+              <div
+                className="mb-5 rounded-xl px-4 py-3 text-[0.83rem]"
+                style={{
+                  background: "rgba(239,68,68,0.10)",
+                  border: "1px solid rgba(239,68,68,0.35)",
+                  color: "#fca5a5",
+                }}
+                role="alert"
+              >
+                {error}
+              </div>
+            )}
+            {notice && (
+              <div
+                className="mb-5 rounded-xl px-4 py-3 text-[0.83rem]"
+                style={{
+                  background: "rgba(16,185,129,0.10)",
+                  border: "1px solid rgba(16,185,129,0.35)",
+                  color: "#6ee7b7",
+                }}
+                role="status"
+              >
+                {notice}
+              </div>
+            )}
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Name (register only) */}
+              {mode === "register" && (
+                <div>
+                  <label
+                    htmlFor="login-name"
+                    className="block text-[0.76rem] font-semibold uppercase tracking-[0.16em] mb-2"
+                    style={{ color: focused === "name" ? GOLD_LIGHT : "rgba(255,253,248,0.45)" }}
+                  >
+                    Full name
+                  </label>
+                  <div className="relative">
+                    <div
+                      className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+                      style={{ color: focused === "name" ? GOLD : "rgba(255,253,248,0.25)" }}
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <input
+                      id="login-name"
+                      type="text"
+                      required
+                      autoComplete="name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      onFocus={() => setFocused("name")}
+                      onBlur={() => setFocused(null)}
+                      placeholder="Your name"
+                      className={inputClass}
+                      style={inputStyle("name")}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Email field */}
               <div>
                 <label
@@ -209,165 +331,125 @@ export function LoginPageClient() {
                     id="login-email"
                     type="email"
                     required
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onFocus={() => setFocused("email")}
                     onBlur={() => setFocused(null)}
                     placeholder="you@example.com"
-                    className="w-full rounded-2xl pl-11 pr-4 py-3.5 text-[0.93rem] outline-none transition-all duration-200"
-                    style={{
-                      background: "rgba(255,253,248,0.06)",
-                      border: focused === "email"
-                        ? `1px solid ${GOLD}80`
-                        : "1px solid rgba(255,253,248,0.12)",
-                      color: "#fffdf8",
-                      boxShadow: focused === "email"
-                        ? `0 0 0 3px rgba(200,155,60,0.12)`
-                        : "none",
-                      caretColor: GOLD,
-                    }}
+                    className={inputClass}
+                    style={inputStyle("email")}
                   />
                 </div>
               </div>
 
-              {/* Password field */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label
-                    htmlFor="login-password"
-                    className="block text-[0.76rem] font-semibold uppercase tracking-[0.16em]"
-                    style={{ color: focused === "password" ? GOLD_LIGHT : "rgba(255,253,248,0.45)" }}
-                  >
-                    Password
-                  </label>
-                  <button
-                    type="button"
-                    className="text-[0.74rem] font-medium transition-colors duration-200"
-                    style={{ color: GOLD_LIGHT }}
-                    onClick={() => alert("Password reset will be available at launch.")}
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-                <div className="relative">
-                  <div
-                    className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
-                    style={{ color: focused === "password" ? GOLD : "rgba(255,253,248,0.25)" }}
-                  >
-                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                      <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                    </svg>
+              {/* Password field (not on forgot) */}
+              {mode !== "forgot" && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label
+                      htmlFor="login-password"
+                      className="block text-[0.76rem] font-semibold uppercase tracking-[0.16em]"
+                      style={{ color: focused === "password" ? GOLD_LIGHT : "rgba(255,253,248,0.45)" }}
+                    >
+                      {mode === "register" ? "Choose a password" : "Password"}
+                    </label>
+                    {mode === "login" && (
+                      <button
+                        type="button"
+                        className="text-[0.74rem] font-medium transition-colors duration-200"
+                        style={{ color: GOLD_LIGHT }}
+                        onClick={() => {
+                          setMode("forgot");
+                          setError(null);
+                          setNotice(null);
+                        }}
+                      >
+                        Forgot password?
+                      </button>
+                    )}
                   </div>
-                  <input
-                    id="login-password"
-                    type={showPass ? "text" : "password"}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onFocus={() => setFocused("password")}
-                    onBlur={() => setFocused(null)}
-                    placeholder="••••••••"
-                    className="w-full rounded-2xl pl-11 pr-12 py-3.5 text-[0.93rem] outline-none transition-all duration-200"
-                    style={{
-                      background: "rgba(255,253,248,0.06)",
-                      border: focused === "password"
-                        ? `1px solid ${GOLD}80`
-                        : "1px solid rgba(255,253,248,0.12)",
-                      color: "#fffdf8",
-                      boxShadow: focused === "password"
-                        ? `0 0 0 3px rgba(200,155,60,0.12)`
-                        : "none",
-                      caretColor: GOLD,
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-4 top-1/2 -translate-y-1/2 transition-colors duration-200"
-                    style={{ color: "rgba(255,253,248,0.35)" }}
-                    onClick={() => setShowPass(!showPass)}
-                    aria-label={showPass ? "Hide password" : "Show password"}
-                  >
-                    <EyeIcon open={showPass} />
-                  </button>
+                  <div className="relative">
+                    <div
+                      className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+                      style={{ color: focused === "password" ? GOLD : "rgba(255,253,248,0.25)" }}
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <input
+                      id="login-password"
+                      type={showPass ? "text" : "password"}
+                      required
+                      minLength={6}
+                      autoComplete={mode === "register" ? "new-password" : "current-password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onFocus={() => setFocused("password")}
+                      onBlur={() => setFocused(null)}
+                      placeholder="••••••••"
+                      className={inputClass + " pr-12"}
+                      style={inputStyle("password")}
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 transition-colors duration-200"
+                      style={{ color: "rgba(255,253,248,0.35)" }}
+                      onClick={() => setShowPass(!showPass)}
+                      aria-label={showPass ? "Hide password" : "Show password"}
+                    >
+                      <EyeIcon open={showPass} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              {/* Remember me */}
-              <div className="flex items-center gap-2.5">
-                <div
-                  className="relative h-5 w-5 rounded-md flex-shrink-0 cursor-pointer"
-                  style={{
-                    background: "rgba(255,253,248,0.07)",
-                    border: "1px solid rgba(255,253,248,0.18)",
-                  }}
-                >
-                  <input type="checkbox" className="sr-only" id="remember" />
-                </div>
-                <label
-                  htmlFor="remember"
-                  className="text-[0.82rem] cursor-pointer"
-                  style={{ color: "rgba(255,253,248,0.50)" }}
-                >
-                  Keep me logged in
-                </label>
-              </div>
+              )}
 
               {/* Submit */}
               <button
                 type="submit"
-                className="group relative w-full overflow-hidden rounded-2xl py-4 font-semibold text-[1rem] transition-all duration-300 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                disabled={busy}
+                className="group relative w-full overflow-hidden rounded-2xl py-4 font-semibold text-[1rem] transition-all duration-300 hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0"
                 style={{
                   background: `linear-gradient(135deg, ${GOLD_PALE} 0%, ${GOLD_LIGHT} 25%, ${GOLD} 60%, #a67f2e 100%)`,
-                  boxShadow: `0 0 40px rgba(200,155,60,0.50), 0 4px 16px rgba(0,0,0,0.25)`,
+                  boxShadow: "0 0 40px rgba(200,155,60,0.50), 0 4px 16px rgba(0,0,0,0.25)",
                   color: NAVY_DARK,
                 }}
               >
-                <span
-                  className="pointer-events-none absolute inset-0 -skew-x-12 translate-x-[-110%] group-hover:translate-x-[110%] transition-transform duration-700"
-                  style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent)" }}
-                  aria-hidden
-                />
-                Sign in to your account
+                {busy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Please wait…
+                  </span>
+                ) : mode === "login" ? (
+                  "Sign in to your account"
+                ) : mode === "register" ? (
+                  "Create my account"
+                ) : (
+                  "Send reset link"
+                )}
               </button>
             </form>
 
-            {/* Divider */}
-            <div className="relative flex items-center gap-3 my-7">
-              <div className="flex-1 h-px" style={{ background: "rgba(255,253,248,0.10)" }} />
-              <span className="text-[0.72rem] uppercase tracking-[0.16em]" style={{ color: "rgba(255,253,248,0.28)" }}>
-                or continue with
-              </span>
-              <div className="flex-1 h-px" style={{ background: "rgba(255,253,248,0.10)" }} />
-            </div>
+            {/* Divider + Google (not on forgot) */}
+            {mode !== "forgot" && (
+              <>
+                <div className="relative flex items-center gap-3 my-7">
+                  <div className="flex-1 h-px" style={{ background: "rgba(255,253,248,0.10)" }} />
+                  <span className="text-[0.72rem] uppercase tracking-[0.16em]" style={{ color: "rgba(255,253,248,0.28)" }}>
+                    or continue with
+                  </span>
+                  <div className="flex-1 h-px" style={{ background: "rgba(255,253,248,0.10)" }} />
+                </div>
 
-            {/* Social login placeholders */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                {
-                  label: "Google",
-                  icon: (
-                    <svg className="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" aria-hidden>
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                    </svg>
-                  ),
-                },
-                {
-                  label: "Facebook",
-                  icon: (
-                    <svg className="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="#1877F2" aria-hidden>
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                    </svg>
-                  ),
-                },
-              ].map((s) => (
                 <button
-                  key={s.label}
                   type="button"
-                  onClick={() => alert(`${s.label} login coming at launch.`)}
-                  className="flex items-center justify-center gap-2.5 rounded-2xl py-3 text-[0.85rem] font-medium transition-all duration-200 hover:-translate-y-0.5"
+                  onClick={handleGoogle}
+                  disabled={busy}
+                  className="flex w-full items-center justify-center gap-2.5 rounded-2xl py-3.5 text-[0.88rem] font-medium transition-all duration-200 hover:-translate-y-0.5 disabled:opacity-60"
                   style={{
                     background: "rgba(255,253,248,0.05)",
                     border: "1px solid rgba(255,253,248,0.12)",
@@ -375,34 +457,46 @@ export function LoginPageClient() {
                     backdropFilter: "blur(8px)",
                   }}
                 >
-                  {s.icon}
-                  {s.label}
+                  <svg className="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" aria-hidden>
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                  Continue with Google
                 </button>
-              ))}
-            </div>
+              </>
+            )}
 
-            {/* Sign up link */}
+            {/* Mode switch */}
             <p className="mt-8 text-center text-[0.84rem]" style={{ color: "rgba(255,253,248,0.40)" }}>
-              Don&apos;t have an account?{" "}
-              <Link
-                href="/create-event"
-                className="font-semibold transition-colors duration-200"
-                style={{ color: GOLD_LIGHT }}
-              >
-                Get started free →
-              </Link>
+              {mode === "login" ? (
+                <>
+                  Don&apos;t have an account?{" "}
+                  <button
+                    type="button"
+                    className="font-semibold transition-colors duration-200"
+                    style={{ color: GOLD_LIGHT }}
+                    onClick={() => { setMode("register"); setError(null); setNotice(null); }}
+                  >
+                    Create one free →
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{" "}
+                  <button
+                    type="button"
+                    className="font-semibold transition-colors duration-200"
+                    style={{ color: GOLD_LIGHT }}
+                    onClick={() => { setMode("login"); setError(null); setNotice(null); }}
+                  >
+                    Sign in →
+                  </button>
+                </>
+              )}
             </p>
           </div>
-        </div>
-
-        {/* Bottom info notice */}
-        <div className="mt-6 flex items-center justify-center gap-2 text-center">
-          <svg className="h-3.5 w-3.5 flex-shrink-0" viewBox="0 0 16 16" fill={GOLD} aria-hidden>
-            <path fillRule="evenodd" d="M8 1a4 4 0 014 4v1h1a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V7a1 1 0 011-1h1V5a4 4 0 014-4zm0 1.5A2.5 2.5 0 005.5 5v1h5V5A2.5 2.5 0 008 2.5z" clipRule="evenodd" />
-          </svg>
-          <p className="text-[0.72rem]" style={{ color: "rgba(255,253,248,0.28)" }}>
-            Authentication launches soon. Explore demo events in the meantime.
-          </p>
         </div>
       </div>
     </div>

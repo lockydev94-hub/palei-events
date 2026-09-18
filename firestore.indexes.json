@@ -111,21 +111,22 @@
           "order": "ASCENDING"
         }
       ]
-    },
-    {
-      "collectionGroup": "auditLogs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "actorId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "timestamp",
-          "order": "DESCENDING"
-        }
-      ]
-    },
+    },    {"collectionGroup": "auditLogs", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "actorId", "order": "ASCENDING"},
+      {"fieldPath": "timestamp", "order": "DESCENDING"}
+    ]},
+    {"collectionGroup": "planRequests", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "uid", "order": "ASCENDING"},
+      {"fieldPath": "createdAt", "order": "DESCENDING"}
+    ]},
+    {"collectionGroup": "rsvps", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "ownerId", "order": "ASCENDING"},
+      {"fieldPath": "createdAt", "order": "DESCENDING"}
+    ]},
+    {"collectionGroup": "wishes", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "ownerId", "order": "ASCENDING"},
+      {"fieldPath": "createdAt", "order": "DESCENDING"}
+    ]},
     {
       "collectionGroup": "auditLogs",
       "queryScope": "COLLECTION",

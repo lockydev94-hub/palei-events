@@ -10,6 +10,12 @@ import {
   type Subscription,
   type UserProfile,
 } from "@/lib/firestore"
+import {
+  getPlanRequests,
+  approvePlanRequest,
+  rejectPlanRequest,
+  type PlanRequest,
+} from "@/lib/customer"
 import { useAuth } from "@/components/admin/auth/AuthContext"
 import {
   CreditCard,
@@ -21,13 +27,20 @@ import {
   Users,
   AlertTriangle,
   CheckCircle2,
+  Clock,
+  Check,
+  Ban,
 } from "lucide-react"
 
-type Tab = "subscriptions" | "overview"
+type Tab = "requests" | "subscriptions" | "overview"
 
 export default function BillingPage() {
-  const [tab, setTab] = useState<Tab>("subscriptions")
+  const [tab, setTab] = useState<Tab>("requests")
   const [subs, setSubs] = useState<Subscription[]>([])
+  const [requests, setRequests] = useState<PlanRequest[] | null>(null)
+  const [processing, setProcessing] = useState<string | null>(null)
+  const [rejecting, setRejecting] = useState<PlanRequest | null>(null)
+  const [adminNote, setAdminNote] = useState("")
   const [users, setUsers] = useState<UserProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<Subscription | null>(null)
@@ -38,6 +51,7 @@ export default function BillingPage() {
 
   useEffect(() => {
     load()
+    getPlanRequests().then(setRequests)
   }, [])
 
   async function load() {
@@ -50,6 +64,44 @@ export default function BillingPage() {
       console.error("Billing load error:", err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleApprove(req: PlanRequest) {
+    if (!user) return
+    if (!confirm(`Approve the "${req.plan}" plan for ${req.email}?`)) return
+    setProcessing(req.id)
+    try {
+      await approvePlanRequest(req, { uid: user.uid, email: user.email || "" })
+      setRequests((rs) => (rs ?? []).map((r) => (r.id === req.id ? { ...r, status: "approved" as const } : r)))
+      await load() // subscription list changed
+    } catch (err) {
+      console.error("Approve failed:", err)
+      alert("Could not approve the request — see console for details.")
+    } finally {
+      setProcessing(null)
+    }
+  }
+
+  async function handleReject() {
+    if (!user || !rejecting) return
+    setProcessing(rejecting.id)
+    try {
+      await rejectPlanRequest(rejecting, { uid: user.uid, email: user.email || "" }, adminNote)
+      setRequests((rs) =>
+        (rs ?? []).map((r) =>
+          r.id === rejecting.id
+            ? { ...r, status: "rejected" as const, adminNote: adminNote || undefined }
+            : r
+        )
+      )
+      setRejecting(null)
+      setAdminNote("")
+    } catch (err) {
+      console.error("Reject failed:", err)
+      alert("Could not reject the request — see console for details.")
+    } finally {
+      setProcessing(null)
     }
   }
 
@@ -112,6 +164,20 @@ export default function BillingPage() {
       {/* Tabs */}
       <div className="flex gap-1 bg-navy/60 border border-white/5 rounded-lg p-1 mb-6 w-fit">
         <button
+          onClick={() => setTab("requests")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            tab === "requests" ? "bg-gold/15 text-gold" : "text-gold-light/50 hover:text-gold-light hover:bg-white/5"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          Plan Requests
+          {(requests?.filter((r) => r.status === "pending").length ?? 0) > 0 && (
+            <span className="ml-1 rounded-full bg-gold px-1.5 py-0.5 text-[0.6rem] font-bold text-navy-dark">
+              {requests!.filter((r) => r.status === "pending").length}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setTab("subscriptions")}
           className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
             tab === "subscriptions" ? "bg-gold/15 text-gold" : "text-gold-light/50 hover:text-gold-light hover:bg-white/5"
@@ -144,6 +210,80 @@ export default function BillingPage() {
               * Assumes ₹1,999 per active subscription. Replace with real plan prices when Stripe is wired.
             </p>
           </div>
+        </div>
+      )}
+
+      {tab === "requests" && (
+        <div className="grid gap-4">
+          {requests === null ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-gold" />
+            </div>
+          ) : requests.length === 0 ? (
+            <div className="bg-navy/60 border border-white/5 rounded-xl p-14 text-center">
+              <Clock className="mx-auto h-10 w-10 text-gold/30 mb-3" />
+              <p className="text-gold-light font-display font-semibold">No plan requests yet</p>
+              <p className="text-gold-light/40 text-sm mt-1">
+                Customer plan requests from the dashboard appear here for approval.
+              </p>
+            </div>
+          ) : (
+            requests.map((req) => {
+              const pendingReq = req.status === "pending"
+              const badge =
+                req.status === "pending"
+                  ? "bg-amber-500/15 text-amber-400"
+                  : req.status === "approved"
+                  ? "bg-emerald-500/15 text-emerald-400"
+                  : "bg-red-500/15 text-red-400"
+              return (
+                <div key={req.id} className="bg-navy/60 border border-white/5 rounded-xl p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <p className="text-gold-light font-semibold">{req.displayName || req.email}</p>
+                        <span className={`rounded-full px-2.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider ${badge}`}>
+                          {req.status}
+                        </span>
+                        <span className="rounded-full bg-gold/10 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider text-gold">
+                          {req.plan} plan
+                        </span>
+                      </div>
+                      <p className="text-gold-light/40 text-xs mt-1">
+                        {req.email} · requested {req.createdAt ? new Date(req.createdAt).toLocaleDateString() : "—"}
+                      </p>
+                      {req.message && (
+                        <p className="text-gold-light/60 text-sm mt-2 italic">“{req.message}”</p>
+                      )}
+                      {req.adminNote && (
+                        <p className="text-gold-light/40 text-xs mt-1">Note: {req.adminNote}</p>
+                      )}
+                    </div>
+                    {pendingReq && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleApprove(req)}
+                          disabled={processing === req.id}
+                          className="flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-400 transition-colors hover:bg-emerald-500/25 disabled:opacity-50"
+                        >
+                          <Check className="h-4 w-4" />
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => { setRejecting(req); setAdminNote("") }}
+                          disabled={processing === req.id}
+                          className="flex items-center gap-1.5 rounded-lg bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                        >
+                          <Ban className="h-4 w-4" />
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })
+          )}
         </div>
       )}
 
@@ -363,6 +503,57 @@ export default function BillingPage() {
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject-with-note modal */}
+      {rejecting && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setRejecting(null)}
+        >
+          <div
+            className="w-full max-w-md bg-navy border border-white/10 rounded-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-lg font-semibold text-gold-light">
+              Reject plan request
+            </h3>
+            <p className="text-gold-light/40 text-sm mt-1">
+              {rejecting.displayName || rejecting.email} — {rejecting.plan} plan
+            </p>
+            <label className="block text-gold-light/50 text-[10px] uppercase tracking-wider mt-5 mb-1">
+              Note to customer (optional)
+            </label>
+            <textarea
+              value={adminNote}
+              onChange={(e) => setAdminNote(e.target.value)}
+              rows={3}
+              maxLength={300}
+              placeholder="e.g. Please contact us for enterprise pricing."
+              className="w-full bg-navy border border-white/10 rounded-lg px-3 py-2 text-sm text-gold-light outline-none focus:border-gold/50 resize-none"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setRejecting(null)}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-gold-light/60 hover:text-gold-light transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={processing === rejecting.id}
+                className="inline-flex items-center gap-2 rounded-lg bg-red-500/15 px-5 py-2 text-sm font-semibold text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-50"
+              >
+                {processing === rejecting.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Ban className="h-4 w-4" />
+                )}
+                Reject request
               </button>
             </div>
           </div>

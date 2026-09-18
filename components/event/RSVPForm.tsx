@@ -1,17 +1,45 @@
 "use client";
 
 import { useState } from "react";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 interface RSVPFormProps {
+  /** Firestore event id — the page falls back to the demo id when offline. */
+  eventId: string;
+  /** uid of the event owner (stamped on each RSVP so the owner can read them). */
+  ownerId?: string;
   eventName: string;
 }
 
-export function RSVPForm({ eventName }: RSVPFormProps) {
-  const [status, setStatus] = useState<"idle" | "submitted">("idle");
+export function RSVPForm({ eventId, ownerId, eventName }: RSVPFormProps) {
+  const [status, setStatus] = useState<"idle" | "submitting" | "submitted" | "error">("idle");
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setStatus("submitted");
+    if (!ownerId) {
+      // Demo events (no Firestore backing) — accept gracefully without a write.
+      setStatus("submitted");
+      return;
+    }
+    const form = e.currentTarget;
+    const data = new FormData(form);
+    setStatus("submitting");
+    try {
+      await addDoc(collection(db, "rsvps"), {
+        eventId,
+        ownerId,
+        name: String(data.get("name") || "").trim(),
+        guests: String(data.get("guests") || "1"),
+        message: String(data.get("message") || "").trim(),
+        createdAt: serverTimestamp(),
+      });
+      setStatus("submitted");
+      form.reset();
+    } catch (err) {
+      console.warn("[rsvp] write failed:", err);
+      setStatus("error");
+    }
   }
 
   if (status === "submitted") {
@@ -38,6 +66,7 @@ export function RSVPForm({ eventName }: RSVPFormProps) {
           </svg>
         </div>
         <h3 className="font-display text-2xl font-semibold text-navy">You&rsquo;re on the list!</h3>
+
         <p className="mt-3 text-[0.95rem] text-mutedText max-w-sm mx-auto leading-relaxed">
           Thank you for confirming for{" "}
           <span className="font-semibold text-navy">{eventName}</span>. We can&rsquo;t wait to celebrate with you.
@@ -157,10 +186,21 @@ export function RSVPForm({ eventName }: RSVPFormProps) {
           />
         </div>
 
+        {status === "error" && (
+          <p
+            className="sm:col-span-2 text-[0.83rem] rounded-xl px-4 py-3"
+            style={{ background: "rgba(239,68,68,0.08)", color: "#b91c1c" }}
+            role="alert"
+          >
+            Something went wrong while sending your RSVP. Please try again.
+          </p>
+        )}
+
         <div className="sm:col-span-2">
           <button
             type="submit"
-            className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-2xl px-8 py-4 font-semibold text-[0.95rem] text-navy-dark transition-all duration-300 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+            disabled={status === "submitting"}
+            className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-2xl px-8 py-4 font-semibold text-[0.95rem] text-navy-dark transition-all duration-300 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 disabled:opacity-60 disabled:hover:translate-y-0"
             style={{
               background: "linear-gradient(135deg, #f0d080 0%, #c89b3c 50%, #a67f2e 100%)",
               boxShadow: "0 0 32px rgba(200,155,60,0.45), 0 4px 16px rgba(0,0,0,0.2)",
@@ -177,7 +217,7 @@ export function RSVPForm({ eventName }: RSVPFormProps) {
             <svg className="h-4 w-4 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
             </svg>
-            Confirm Attendance
+            {status === "submitting" ? "Sending…" : "Confirm Attendance"}
           </button>
         </div>
       </div>

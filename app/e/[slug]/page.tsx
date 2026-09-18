@@ -112,7 +112,7 @@ export default async function EventPage({ params }: EventPageProps) {
               </div>
             </section>
 
-            {/* Wishes */}
+            {/* Wishes — live Firestore feed for real events, static for demos */}
             <section aria-label="Guest wishes">
               <SectionHeading
                 eyebrow="Guest wishes"
@@ -120,7 +120,11 @@ export default async function EventPage({ params }: EventPageProps) {
                 align="left"
               />
               <div className="mt-8">
-                <WishWall event={event} />
+                <WishWall
+                  eventId={event.id}
+                  ownerId={(event as { createdBy?: string }).createdBy}
+                  initialWishes={event.wishes}
+                />
               </div>
             </section>
           </div>
@@ -203,7 +207,11 @@ export default async function EventPage({ params }: EventPageProps) {
             description="Let us know who's coming — it helps us plan a better celebration."
           />
           <div className="mx-auto mt-10 max-w-2xl">
-            <RSVPForm eventName={event.name} />
+            <RSVPForm
+              eventId={event.id}
+              ownerId={(event as { createdBy?: string }).createdBy}
+              eventName={event.name}
+            />
           </div>
         </Container>
       </section>

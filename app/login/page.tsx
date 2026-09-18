@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { LoginPageClient } from "@/components/contact/LoginPageClient";
+import { CustomerAuthProvider } from "@/components/customer/CustomerAuthContext";
 
 export const metadata: Metadata = {
   title: "Login — Palei Events",
@@ -8,5 +10,12 @@ export const metadata: Metadata = {
 };
 
 export default function LoginPage() {
-  return <LoginPageClient />;
+  return (
+    <CustomerAuthProvider>
+      {/* LoginPageClient reads the ?next= search param → needs Suspense. */}
+      <Suspense>
+        <LoginPageClient />
+      </Suspense>
+    </CustomerAuthProvider>
+  );
 }

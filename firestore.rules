@@ -50,15 +50,75 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ── Events ────────────────────────────────────────────────
     match /events/{docId} {
-      // Same shape as blog posts — public sees published, admin sees all.
-      allow read: if resource.data.status == "published" || isAdmin();
-      allow create, update, delete: if isAdmin();
+      // Public sees published events; admins see all; the owning customer
+      // can always read their own (drafts included).
+      allow read: if resource.data.status == "published"
+        || isAdmin()
+        || (isAuth() && resource.data.createdBy == request.auth.uid);
+      // Customers create their own events (createdBy must be themselves);
+      // only the owner or an admin can update / delete. The dashboard UI
+      // additionally gates creation behind an approved plan — rules stay
+      // ownership-only so admin seeding and edge flows never break.
+      allow create: if isAdmin()
+        || (isAuth() && request.resource.data.createdBy == request.auth.uid);
+      allow update, delete: if isAdmin()
+        || (isAuth() && resource.data.createdBy == request.auth.uid);
+    }
+
+    // ── Guest RSVPs & wishes ─────────────────────────────────
+    // Guests are anonymous (no auth). At create time the client stamps
+    // `ownerId` with the event's `createdBy` uid — the rules verify that
+    // stamp against the real event doc, so it can't be forged. The event
+    // owner then reads RSVPs / deletes wishes of their own events, and
+    // admins can moderate everything.
+    function stampedOwnerMatchesEvent(data) {
+      return data.eventId is string
+        && data.ownerId is string
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() < 200
+        && get(/databases/$(database)/documents/events/$(data.eventId)).data.createdBy == data.ownerId;
+    }
+
+    match /rsvps/{docId} {
+      allow create: if stampedOwnerMatchesEvent(request.resource.data)
+        && request.resource.data.guests is string;
+      allow read: if isAdmin()
+        || (isAuth() && resource.data.ownerId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    match /wishes/{docId} {
+      allow create: if stampedOwnerMatchesEvent(request.resource.data)
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() < 2000;
+      // Wishes appear on the public wish wall.
+      allow read: if true;
+      // Immutable once written; the event owner or an admin may delete
+      // (e.g. to hide an offensive wish).
+      allow update: if false;
+      allow delete: if isAdmin()
+        || (isAuth() && resource.data.ownerId == request.auth.uid);
+    }
+
+    // ── Plan requests (customer → admin) ─────────────────────
+    // A signed-in customer may submit one request for themselves and read
+    // their own requests. Only admins review (update) them.
+    match /planRequests/{docId} {
+      allow read: if isAdmin()
+        || (isAuth() && resource.data.uid == request.auth.uid);
+      allow create: if isAuth()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == "pending";
+      allow update, delete: if isAdmin();
     }
 
     // ── Announcements ─────────────────────────────────────────
     // The public banner reads active announcements. Dismissals are
-    // append-only and constrained to the caller's own uid.
+    // append-only and constrained to the caller's own client id.
     match /announcements/{docId} {
       allow read: if true;
       allow create, delete: if isAdmin();
@@ -77,11 +137,15 @@ service cloud.firestore {
         );
     }
 
-    // ── Admin-only collections ────────────────────────────────
+    // ── Users ─────────────────────────────────────────────────
     match /users/{userId} {
       // A user can read their own profile; admins can read everyone.
       // No one else can list the users collection.
       allow read: if isAdmin() || isOwner(userId);
+      // Customers self-register: they may create their own profile doc,
+      // but only with the fixed "customer" role (never an admin role).
+      allow create: if isAdmin()
+        || (isOwner(userId) && request.resource.data.role == "customer");
       // Users can update their own non-privileged fields (displayName,
       // photoURL, preferences); admins can update anything including
       // role / plan / claim.
@@ -91,11 +155,15 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(["displayName", "photoURL", "preferences", "updatedAt", "lastLogin"])
         );
-      allow create, delete: if isAdmin();
+      allow delete: if isAdmin();
     }
 
+    // ── Subscriptions ─────────────────────────────────────────
     match /subscriptions/{docId} {
-      allow read: if isAdmin();
+      // Customers can read their own subscription (Plan page); admins can
+      // read and manage everything. Only admins create / change subs.
+      allow read: if isAdmin()
+        || (isAuth() && resource.data.userId == request.auth.uid);
       allow create, update, delete: if isAdmin();
     }
 
