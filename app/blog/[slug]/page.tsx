@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { blogPosts } from "@/data/blog";
+import { blogPosts as fallbackPosts } from "@/data/blog";
+import { getBlogPostBySlug, getBlogPosts } from "@/lib/firestore";
 import { BlogGrid } from "@/components/blog/BlogGrid";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 
@@ -10,13 +11,21 @@ interface BlogPostPageProps {
   params: Promise<{ slug: string }>;
 }
 
+/**
+ * Pre-render every fallback post at build time. Posts that only exist in
+ * Firestore will still be reachable on-demand thanks to `dynamicParams = true`
+ * (the Next.js default) — Next will render the page on the first request and
+ * cache it for the next one.
+ */
 export function generateStaticParams() {
-  return blogPosts.map((post) => ({ slug: post.slug }));
+  return fallbackPosts.map((post) => ({ slug: post.slug }));
 }
 
 export async function generateMetadata({ params }: BlogPostPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = blogPosts.find((p) => p.slug === slug);
+  // Try Firestore first so titles follow admin edits, fall back to the
+  // hardcoded list for SSG crawlers.
+  const post = (await getBlogPostBySlug(slug)) ?? fallbackPosts.find((p) => p.slug === slug);
   if (!post) return { title: "Article not found" };
   return {
     title: post.title,
@@ -27,10 +36,12 @@ export async function generateMetadata({ params }: BlogPostPageProps): Promise<M
 
 export default async function BlogPostPage({ params }: BlogPostPageProps) {
   const { slug } = await params;
-  const post = blogPosts.find((p) => p.slug === slug);
+  const post = (await getBlogPostBySlug(slug)) ?? fallbackPosts.find((p) => p.slug === slug);
   if (!post) notFound();
 
-  const related = blogPosts.filter((p) => p.slug !== slug).slice(0, 3);
+  // Pull the rest of the list for the related grid (also Firestore-aware).
+  const allPosts = (await getBlogPosts("published")) ?? fallbackPosts;
+  const related = allPosts.filter((p) => p.slug !== slug).slice(0, 3);
   const sections = post.sections ?? [];
   const tips = post.tips ?? [];
 

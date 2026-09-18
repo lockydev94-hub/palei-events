@@ -46,3 +46,8 @@ logs/
 # os
 Thumbs.db
 Desktop.ini
+
+# Firebase service-account JSON (contains a private key)
+*palei-events-firebase-adminsdk*.json
+firebase-service-account.json
+gcp-service-account.json

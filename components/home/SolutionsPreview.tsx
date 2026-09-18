@@ -3,12 +3,24 @@
 import { Section } from "@/components/ui/Section";
 import { SolutionCard } from "@/components/marketing/SolutionCard";
 import { Button } from "@/components/ui/Button";
-import { solutions } from "@/data/solutions";
+import { solutions as fallbackSolutions } from "@/data/solutions";
+import { useState, useEffect } from "react";
 import { useScrollReveal } from "@/lib/useScrollReveal";
+import { getSolutions } from "@/lib/firestore";
 
 const delays = ["", "sr-delay-100", "sr-delay-200", "sr-delay-300", "sr-delay-400", "sr-delay-500"];
 
 export function SolutionsPreview() {
+  const [solutions, setSolutions] = useState(fallbackSolutions)
+
+  useEffect(() => {
+    let cancelled = false
+    getSolutions()
+      .then((data) => { if (!cancelled && data.length > 0) setSolutions(data) })
+      .catch(() => {/* keep fallback */})
+    return () => { cancelled = true }
+  }, [])
+
   const heading = useScrollReveal({ threshold: 0.2 });
   const grid = useScrollReveal({ threshold: 0.08 });
   const cta = useScrollReveal({ threshold: 0.3 });

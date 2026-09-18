@@ -3,26 +3,46 @@
 import { Section } from "@/components/ui/Section";
 import { TemplateCard } from "@/components/marketing/TemplateCard";
 import { Button } from "@/components/ui/Button";
-import { templates } from "@/data/templates";
-import { useState } from "react";
+import { templates as fallbackTemplates } from "@/data/templates";
+import { useState, useEffect, useMemo } from "react";
 import { useScrollReveal } from "@/lib/useScrollReveal";
+import { getTemplates } from "@/lib/firestore";
 
-const allShowcase = templates.filter((t) =>
-  ["royal-wedding", "birthday-celebration", "corporate-conference", "school-annual-day", "college-fest", "government-event"].some((id) => t.id === id)
-);
-
-const categories = ["All", ...Array.from(new Set(allShowcase.map((t) => t.category)))];
+const SHOWCASE_IDS = ["royal-wedding", "birthday-celebration", "corporate-conference", "school-annual-day", "college-fest", "government-event"];
 
 export function TemplatesPreview() {
+  const [allTemplates, setAllTemplates] = useState(fallbackTemplates)
   const [activeCategory, setActiveCategory] = useState("All");
-  const heading = useScrollReveal({ threshold: 0.2 });
-  const filters = useScrollReveal({ threshold: 0.2 });
-  const grid = useScrollReveal({ threshold: 0.08 });
-  const cta = useScrollReveal({ threshold: 0.3 });
+
+  useEffect(() => {
+    let cancelled = false
+    getTemplates()
+      .then((data) => { if (!cancelled && data.length > 0) setAllTemplates(data) })
+      .catch(() => {/* keep fallback */})
+    return () => { cancelled = true }
+  }, [])
+
+  // Prefer featured templates; fall back to known showcase IDs; fall back to first 6
+  const allShowcase = useMemo(() => {
+    const featured = allTemplates.filter((t) => t.featured)
+    if (featured.length >= 3) return featured.slice(0, 6)
+    const byId = allTemplates.filter((t) => SHOWCASE_IDS.includes(t.id))
+    return byId.length >= 3 ? byId : allTemplates.slice(0, 6)
+  }, [allTemplates])
+
+  const categories = useMemo(() =>
+    ["All", ...Array.from(new Set(allShowcase.map((t) => t.category)))],
+    [allShowcase]
+  )
 
   const showcase = activeCategory === "All"
     ? allShowcase
-    : allShowcase.filter((t) => t.category === activeCategory);
+    : allShowcase.filter((t) => t.category === activeCategory)
+
+  const heading = useScrollReveal({ threshold: 0.2 })
+  const filters = useScrollReveal({ threshold: 0.2 })
+  const grid = useScrollReveal({ threshold: 0.08 })
+  const cta = useScrollReveal({ threshold: 0.3 })
 
   return (
     <Section id="templates" className="bg-warmWhite overflow-hidden">

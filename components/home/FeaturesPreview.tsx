@@ -3,39 +3,51 @@
 import { Section } from "@/components/ui/Section";
 import { FeatureSection } from "@/components/marketing/FeatureSection";
 import { Button } from "@/components/ui/Button";
-import { features } from "@/data/features";
+import { features as fallbackFeatures } from "@/data/features";
+import { useState, useEffect, useMemo } from "react";
 import { useScrollReveal } from "@/lib/useScrollReveal";
+import { getFeatures } from "@/lib/firestore";
 
-const featured = features.filter((f) =>
-  ["event-website", "rsvp", "qr-code", "photo-gallery", "guest-uploads", "schedule", "analytics"].includes(f.id)
-);
+const FEATURED_IDS = ["event-website", "rsvp", "qr-code", "photo-gallery", "guest-uploads", "schedule", "analytics"];
 
 function AnimatedFeatureRow({
   feature,
   reverse,
   index,
 }: {
-  feature: (typeof featured)[number];
+  feature: (typeof fallbackFeatures)[number];
   reverse: boolean;
   index: number;
 }) {
   const { ref, visible } = useScrollReveal({ threshold: 0.12 });
-  // Alternate: even rows fade from right, odd from left
   const animClass = index % 2 === 0 ? "sr-fade-right" : "sr-fade-left";
 
   return (
-    <div
-      ref={ref}
-      className={`${animClass} ${visible ? "sr-visible" : ""}`}
-    >
+    <div ref={ref} className={`${animClass} ${visible ? "sr-visible" : ""}`}>
       <FeatureSection feature={feature} reverse={reverse} />
     </div>
   );
 }
 
 export function FeaturesPreview() {
+  const [allFeatures, setAllFeatures] = useState(fallbackFeatures)
+
+  useEffect(() => {
+    let cancelled = false
+    getFeatures()
+      .then((data) => { if (!cancelled && data.length > 0) setAllFeatures(data) })
+      .catch(() => {/* keep fallback */})
+    return () => { cancelled = true }
+  }, [])
+
+  const featured = useMemo(() => {
+    const byId = allFeatures.filter((f) => FEATURED_IDS.includes(f.id))
+    return byId.length >= 3 ? byId : allFeatures.slice(0, 7)
+  }, [allFeatures])
+
   const heading = useScrollReveal({ threshold: 0.25 });
   const cta = useScrollReveal({ threshold: 0.4 });
+
 
   return (
     <Section id="features" className="bg-ivory overflow-hidden">

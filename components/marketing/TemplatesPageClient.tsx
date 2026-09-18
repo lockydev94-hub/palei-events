@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Search, ArrowRight, CheckCircle2, Sparkles, SlidersHorizontal, X, Eye, Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { useScrollReveal } from "@/lib/useScrollReveal";
-import { templates, templateCategories, templateStyles } from "@/data/templates";
+import { templates as fallbackTemplates, templateCategories, templateStyles } from "@/data/templates";
 import type { Template } from "@/data/templates";
+import { getTemplates } from "@/lib/firestore";
 
 /* ════════════════════════════════════════════════════════════════
    CATEGORY → colour accent mapping
@@ -188,10 +189,23 @@ function CategoryPill({ label, active, onClick }: { label: string; active: boole
    FULL TEMPLATES PAGE CLIENT
 ════════════════════════════════════════════════════════════════ */
 export function TemplatesPageClient() {
+  const [templates, setTemplates] = useState<Template[]>(fallbackTemplates)
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [style, setStyle] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false
+    // Templates can be filtered server-side by category if a category is selected
+    getTemplates(category !== "All" ? category : undefined)
+      .then((data) => {
+        if (cancelled) return
+        if (data && data.length > 0) setTemplates(data)
+      })
+      .catch(() => {/* keep fallback */})
+    return () => { cancelled = true }
+  }, [category])
 
   const filtered = useMemo(() => {
     return templates.filter((t) => {

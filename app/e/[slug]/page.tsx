@@ -13,6 +13,23 @@ import { SectionHeading } from "@/components/ui/SectionHeading";
 import { demoEvents } from "@/data/events";
 import { APP_URL } from "@/lib/constants";
 
+/**
+ * Load event data — tries Firestore first, falls back to hardcoded demoEvents.
+ * This runs server-side so it can safely import Firestore.
+ */
+async function getEvent(slug: string) {
+  try {
+    // Dynamic import to avoid bundling firebase-admin in client chunks
+    const { getEventBySlug } = await import("@/lib/firestore");
+    const event = await getEventBySlug(slug);
+    if (event) return event;
+  } catch (err) {
+    // Firestore unavailable — fall back silently
+  }
+  // Fallback to hardcoded demo data
+  return demoEvents.find((e) => e.slug === slug) || null;
+}
+
 interface EventPageProps {
   params: Promise<{ slug: string }>;
 }
@@ -23,7 +40,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: EventPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const event = demoEvents.find((e) => e.slug === slug);
+  const event = await getEvent(slug);
   if (!event) return { title: "Event not found" };
 
   return {
@@ -39,26 +56,9 @@ export async function generateMetadata({ params }: EventPageProps): Promise<Meta
   };
 }
 
-/* ── Section wrapper with premium styling ── */
-function Section({
-  children,
-  label,
-  className = "",
-}: {
-  children: React.ReactNode;
-  label: string;
-  className?: string;
-}) {
-  return (
-    <section aria-label={label} className={className}>
-      {children}
-    </section>
-  );
-}
-
 export default async function EventPage({ params }: EventPageProps) {
   const { slug } = await params;
-  const event = demoEvents.find((e) => e.slug === slug);
+  const event = await getEvent(slug);
 
   if (!event) {
     notFound();
@@ -77,7 +77,7 @@ export default async function EventPage({ params }: EventPageProps) {
           <div className="space-y-16">
 
             {/* About */}
-            <Section label="About the event">
+            <section aria-label="About the event">
               <SectionHeading
                 eyebrow="About this event"
                 title={event.tagline}
@@ -86,10 +86,10 @@ export default async function EventPage({ params }: EventPageProps) {
               <p className="mt-5 max-w-2xl text-[1.05rem] leading-[1.85] text-mutedText text-pretty">
                 {event.description}
               </p>
-            </Section>
+            </section>
 
             {/* Schedule */}
-            <Section label="Event schedule">
+            <section aria-label="Event schedule">
               <SectionHeading
                 eyebrow="Schedule"
                 title="Programme"
@@ -98,10 +98,10 @@ export default async function EventPage({ params }: EventPageProps) {
               <div className="mt-8">
                 <EventSchedule event={event} />
               </div>
-            </Section>
+            </section>
 
             {/* Gallery */}
-            <Section label="Event gallery">
+            <section aria-label="Event gallery">
               <SectionHeading
                 eyebrow="Gallery"
                 title="Moments"
@@ -110,10 +110,10 @@ export default async function EventPage({ params }: EventPageProps) {
               <div className="mt-8">
                 <GalleryGrid event={event} />
               </div>
-            </Section>
+            </section>
 
             {/* Wishes */}
-            <Section label="Guest wishes">
+            <section aria-label="Guest wishes">
               <SectionHeading
                 eyebrow="Guest wishes"
                 title="From our guests"
@@ -122,7 +122,7 @@ export default async function EventPage({ params }: EventPageProps) {
               <div className="mt-8">
                 <WishWall event={event} />
               </div>
-            </Section>
+            </section>
           </div>
 
           {/* RIGHT sidebar */}
@@ -136,7 +136,6 @@ export default async function EventPage({ params }: EventPageProps) {
                 boxShadow: "0 8px 40px rgba(23,32,51,0.07)",
               }}
             >
-              {/* Card header */}
               <div
                 className="px-6 py-5"
                 style={{
@@ -166,7 +165,6 @@ export default async function EventPage({ params }: EventPageProps) {
                   </div>
                 </div>
               </div>
-              {/* Countdown body */}
               <div className="p-6">
                 <Countdown targetDate={event.startDate} />
               </div>
@@ -188,7 +186,6 @@ export default async function EventPage({ params }: EventPageProps) {
           borderTop: "1px solid rgba(200,155,60,0.10)",
         }}
       >
-        {/* ambient glow */}
         <div
           className="absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[300px] pointer-events-none"
           style={{

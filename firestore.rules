@@ -1,0 +1,132 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ───────────────────────────────────────────────
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuth() && request.auth.uid == userId;
+    }
+
+    // ── Public marketing surface (anonymous read OK) ──────────
+    match /projects/{docId} {
+      // Site settings singleton — used by the public Navbar/Footer.
+      allow read: if true;
+      // Only admins can write.
+      allow write: if isAdmin();
+    }
+
+    match /templates/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /solutions/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /features/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /pricingPlans/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /blogPosts/{docId} {
+      // Public sees only published posts; signed-in admins see drafts too.
+      allow read: if resource.data.status == "published" || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /events/{docId} {
+      // Same shape as blog posts — public sees published, admin sees all.
+      allow read: if resource.data.status == "published" || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Announcements ─────────────────────────────────────────
+    // The public banner reads active announcements. Dismissals are
+    // append-only and constrained to the caller's own uid.
+    match /announcements/{docId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      // Dismissals: any signed-in OR anonymous visitor may append their own
+      // client id to `dismissedBy` (the public banner uses a stable anonymous
+      // id, not necessarily a Firebase uid). Only the dismissedBy key may
+      // change, and entries may only be added — never removed.
+      allow update: if isAdmin()
+        || (
+          request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(["dismissedBy"])
+          && request.resource.data.dismissedBy
+              .hasAll(resource.data.dismissedBy)
+          && request.resource.data.dismissedBy.size()
+              > resource.data.dismissedBy.size()
+        );
+    }
+
+    // ── Admin-only collections ────────────────────────────────
+    match /users/{userId} {
+      // A user can read their own profile; admins can read everyone.
+      // No one else can list the users collection.
+      allow read: if isAdmin() || isOwner(userId);
+      // Users can update their own non-privileged fields (displayName,
+      // photoURL, preferences); admins can update anything including
+      // role / plan / claim.
+      allow update: if isAdmin()
+        || (
+          isOwner(userId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(["displayName", "photoURL", "preferences", "updatedAt", "lastLogin"])
+        );
+      allow create, delete: if isAdmin();
+    }
+
+    match /subscriptions/{docId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /campaigns/{docId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /auditLogs/{docId} {
+      // Admins read the trail in the dashboard. Writes come from the admin
+      // dashboard itself (safeAudit in lib/firestore.ts) — the write helpers
+      // stamp actor/action/timestamp, and only admins can produce a valid
+      // admin claim, so letting admin-token writes through is safe.
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false; // append-only — entries are immutable
+    }
+
+    // ── Media assets ──────────────────────────────────────────
+    match /media/{docId} {
+      // Public read so the marketing site can resolve hero images.
+      // Writes are admin-only.
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // No catch-all. Firestore denies any path not matched above by
+    // default, so a missing match /{x=**} block does NOT open access —
+    // it just means new collections are denied until rules land for
+    // them. This keeps the rules file unambiguous and avoids any
+    // overlap between explicit collection matches and a recursive
+    // default-deny.
+  }
+}

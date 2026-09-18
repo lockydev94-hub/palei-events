@@ -8,16 +8,22 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed:admin": "node scripts/seed-admin.mjs"
   },
   "dependencies": {
+    "firebase": "^12.18.0",
+    "firebase-admin": "^14.3.0",
     "lucide-react": "^1.33.0",
     "next": "^16.3.1",
+    "next-cloudinary": "^6.18.8",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-easy-crop": "^6.2.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   ArrowRight, Clock, Calendar, BookOpen,
   Sparkles, TrendingUp, Tag,
@@ -10,8 +10,9 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { useScrollReveal } from "@/lib/useScrollReveal";
-import { blogPosts } from "@/data/blog";
+import { blogPosts as fallbackPosts } from "@/data/blog";
 import type { BlogPost } from "@/data/blog";
+import { getBlogPosts } from "@/lib/firestore";
 
 /* ══════════════════════════════════════════════════
    CATEGORY → accent colour
@@ -317,22 +318,34 @@ function HeroStat({ value, label }: { value: string; label: string }) {
 const ALL = "All";
 
 export function BlogPageClient() {
+  const [blogPosts, setBlogPosts] = useState<BlogPost[]>(fallbackPosts)
   const [activeCategory, setActiveCategory] = useState(ALL);
+
+  useEffect(() => {
+    let cancelled = false
+    getBlogPosts("published")
+      .then((data) => {
+        if (cancelled) return
+        if (data && data.length > 0) setBlogPosts(data)
+      })
+      .catch(() => {/* keep fallback */})
+    return () => { cancelled = true }
+  }, [])
 
   const categories = useMemo(() => {
     const cats = [ALL, ...Array.from(new Set(blogPosts.map((p) => p.category)))];
     return cats;
-  }, []);
+  }, [blogPosts]);
 
   const countMap = useMemo(() => {
     const m: Record<string, number> = { All: blogPosts.length };
     blogPosts.forEach((p) => { m[p.category] = (m[p.category] ?? 0) + 1; });
     return m;
-  }, []);
+  }, [blogPosts]);
 
   const filtered = useMemo(() =>
     activeCategory === ALL ? blogPosts : blogPosts.filter((p) => p.category === activeCategory),
-    [activeCategory]
+    [activeCategory, blogPosts]
   );
 
   const featured = filtered[0];

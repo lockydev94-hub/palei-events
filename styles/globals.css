@@ -392,3 +392,25 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+/* ── Announcement banner — keeps the fixed navbar from overlapping ── */
+/* The banner is a fixed-positioned stack above the navbar. We push the
+   <header> down by the banner height (one row of ~46px) plus a small gap,
+   and slide page content down so the first hero isn't hidden under either. */
+body[data-has-announcement="true"] header.fixed {
+  top: 56px;
+}
+body[data-has-announcement="true"] main#main {
+  padding-top: 56px;
+}
+
+@media (max-width: 640px) {
+  /* Two stacked banners = taller offset; show only the first row of nav
+     on small screens. We keep main padding so hero text isn't clipped. */
+  body[data-has-announcement="true"] header.fixed {
+    top: 100px;
+  }
+  body[data-has-announcement="true"] main#main {
+    padding-top: 100px;
+  }
+}

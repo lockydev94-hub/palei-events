@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Check, ArrowRight, Sparkles, Zap, Shield, Star,
   Building2, Users, Crown, Gift, ChevronDown, MessageCircle,
@@ -9,8 +9,9 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { useScrollReveal } from "@/lib/useScrollReveal";
-import { pricingPlans, pricingNote } from "@/data/pricing";
+import { pricingPlans as fallbackPlans, pricingNote as fallbackNote } from "@/data/pricing";
 import type { PricingPlan } from "@/data/pricing";
+import { getPricingPlans } from "@/lib/firestore";
 
 /* ══════════════════════════════════════════════════════
    PLAN METADATA (icon + accent per plan)
@@ -389,8 +390,25 @@ function CompareTable() {
    PAGE
 ══════════════════════════════════════════════════════ */
 export function PricingPageClient() {
-  const plans = pricingPlans.filter((p) => p.id !== "enterprise");
-  const enterprise = pricingPlans.find((p) => p.id === "enterprise");
+  // Firestore-driven; falls back to hardcoded data on the client if the
+  // collection is empty or unreachable. This keeps SEO crawlers and
+  // first-paint users always seeing something.
+  const [plans, setPlans] = useState<PricingPlan[]>(fallbackPlans)
+  const [pricingNote, setPricingNote] = useState<string>(fallbackNote)
+
+  useEffect(() => {
+    let cancelled = false
+    getPricingPlans()
+      .then((data) => {
+        if (cancelled) return
+        if (data && data.length > 0) setPlans(data)
+      })
+      .catch(() => {/* keep fallback */})
+    return () => { cancelled = true }
+  }, [])
+
+  const standardPlans = plans.filter((p) => p.id !== "enterprise")
+  const enterprise = plans.find((p) => p.id === "enterprise")
 
   const heroSr  = useScrollReveal({ threshold: 0.05 });
   const cardSr  = useScrollReveal({ threshold: 0.04 });
@@ -498,7 +516,7 @@ export function PricingPageClient() {
             ref={cardSr.ref}
             className="grid gap-6 md:grid-cols-2 xl:grid-cols-4"
           >
-            {plans.map((plan, i) => (
+            {standardPlans.map((plan, i) => (
               <div
                 key={plan.id}
                 className={`sr-rise ${cardDelays[i] ?? ""} ${cardSr.visible ? "sr-visible" : ""}

@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowRight, CheckCircle2, Sparkles, Zap, Globe, QrCode, Image as ImageIcon, Upload, Calendar, Bell, BarChart3, Palette } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { useScrollReveal } from "@/lib/useScrollReveal";
-import { features, featureGroups } from "@/data/features";
+import { features as fallbackFeatures, featureGroups as fallbackGroups } from "@/data/features";
 import type { Feature } from "@/data/features";
+import { getFeatures } from "@/lib/firestore";
 
 /* ─── icon component map (inline — no dep on Icon.tsx) ────────── */
 const iconComponents: Record<string, React.ElementType> = {
@@ -109,8 +110,15 @@ function FeatureCard({ feature, groupIndex }: { feature: Feature; groupIndex: nu
   );
 }
 
+/* ─── Feature group shape (mirrors data/features.ts featureGroups) ── */
+interface FeatureGroup {
+  title: string
+  description: string
+  features: Feature[]
+}
+
 /* ─── Feature group section ────────────────────────────────────── */
-function FeatureGroupSection({ group, index }: { group: typeof featureGroups[number]; index: number }) {
+function FeatureGroupSection({ group, index }: { group: FeatureGroup; index: number }) {
   const sr  = useScrollReveal({ threshold: 0.08 });
   const hsr = useScrollReveal({ threshold: 0.15 });
   const delays = ["", "sr-delay-100", "sr-delay-200", "sr-delay-300", "sr-delay-400", "sr-delay-500"];
@@ -180,8 +188,9 @@ function FilterBar({ active, onChange }: { active: string; onChange: (v: string)
 }
 
 /* ─── Filtered all-features grid ───────────────────────────────── */
-function AllFeaturesGrid({ filter }: { filter: string }) {
-  const shown = filter === ALL ? features : features.filter(f => f.category === filter);
+function AllFeaturesGrid({ filter, features }: { filter: string; features: Feature[] }) {
+  const shown = filter === ALL ? features : features.filter(f => f.category === filter)
+
   const sr = useScrollReveal({ threshold: 0.05 });
   const delays = ["", "sr-delay-100", "sr-delay-200", "sr-delay-150", "sr-delay-250", "sr-delay-300",
                   "sr-delay-100", "sr-delay-200", "sr-delay-150", "sr-delay-300"];
@@ -251,8 +260,32 @@ function FinalCTA() {
 
 /* ─── Page ──────────────────────────────────────────────────────── */
 export function FeaturesPageClient() {
+  const [features, setFeatures] = useState<Feature[]>(fallbackFeatures)
+  const [featureGroups, setFeatureGroups] = useState<FeatureGroup[]>(fallbackGroups)
   const [filter, setFilter] = useState(ALL);
   const showFiltered = filter !== ALL;
+
+  useEffect(() => {
+    let cancelled = false
+    getFeatures()
+      .then((data) => {
+        if (cancelled) return
+        if (data && data.length > 0) {
+          setFeatures(data)
+          // Keep the original group descriptions (which read like marketing copy)
+          // but swap in the fresh feature list from Firestore. Only rebuild when
+          // the canonical group title matches a known bucket.
+          setFeatureGroups(
+            fallbackGroups.map((g) => ({
+              ...g,
+              features: data.filter((f) => f.category === g.title),
+            }))
+          )
+        }
+      })
+      .catch(() => {/* keep fallback */})
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <>
@@ -364,7 +397,8 @@ export function FeaturesPageClient() {
                 Clear filter ×
               </button>
             </div>
-            <AllFeaturesGrid filter={filter} />
+            <AllFeaturesGrid filter={filter} features={features} />
+
           </div>
         </div>
       )}

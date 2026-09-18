@@ -5,10 +5,11 @@ import Image from "next/image";
 import { CheckCircle2, ArrowRight, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
-import { solutions } from "@/data/solutions";
+import { solutions as fallbackSolutions } from "@/data/solutions";
 import { useScrollReveal } from "@/lib/useScrollReveal";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Solution } from "@/data/solutions";
+import { getSolutions } from "@/lib/firestore";
 
 const audienceEmoji: Record<string, string> = {
   individuals: "💍",
@@ -57,13 +58,13 @@ function AudienceTab({
   );
 }
 
-function AudienceTabs() {
-  const [active, setActive] = useState(solutions[0].id);
+function AudienceTabs({ solutions }: { solutions: Solution[] }) {
+  const [active, setActive] = useState(solutions[0]?.id ?? "")
   const scrollTo = (id: string) => {
-    setActive(id);
-    const el = document.getElementById(`sol-${id}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+    setActive(id)
+    const el = document.getElementById(`sol-${id}`)
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
   return (
     <div className="sticky top-[72px] z-30 border-b border-navy/8 bg-ivory/95 backdrop-blur-lg shadow-[0_2px_20px_rgba(23,32,51,0.05)]">
       <div className="container-shell overflow-x-auto">
@@ -74,7 +75,7 @@ function AudienceTabs() {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function SolutionDetailCard({
@@ -227,6 +228,19 @@ function FinalCTA() {
 }
 
 export function SolutionsPageClient() {
+  const [solutions, setSolutions] = useState<Solution[]>(fallbackSolutions)
+
+  useEffect(() => {
+    let cancelled = false
+    getSolutions()
+      .then((data) => {
+        if (cancelled) return
+        if (data && data.length > 0) setSolutions(data)
+      })
+      .catch(() => {/* keep fallback */})
+    return () => { cancelled = true }
+  }, [])
+
   return (
     <>
       {/* ══ DARK HERO ═══════════════════════════════════════════════════════ */}
@@ -335,7 +349,7 @@ export function SolutionsPageClient() {
       </section>
 
       {/* ══ STICKY TABS ════════════════════════════════════════════════════ */}
-      <AudienceTabs />
+      <AudienceTabs solutions={solutions} />
 
       {/* ══ DETAIL SECTIONS ═════════════════════════════════════════════════ */}
       <div>

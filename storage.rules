@@ -1,0 +1,81 @@
+rules_version = '2';
+
+// Firebase Storage rules — tiered by path so public assets stay public
+// and private uploads (RSVPs, wish photos, draft event media) require auth.
+//
+// Convention (used by Cloud Functions when writing uploads):
+//   /public/**           — site assets, always public
+//   /events/{slug}/**    — event media; public when the linked event is
+//                          published, auth-only otherwise
+//   /events/{slug}/rsvp-photos/**
+//                        — guest RSVP photo uploads; only the uploader and
+//                          the event owner can read, only authed users can
+//                          write
+//   /events/{slug}/drafts/**
+//                        — admin-only, never public
+//   /users/{uid}/**      — private to that user
+//   /admin/**            — admin-only
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // /public/** — anything in here is a published marketing asset.
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // /events/{slug}/... — per-event media.
+    match /events/{slug}/{sub=**} {
+
+      // RSVP and wish photos are private: only the uploader, admins, and
+      // (for published events) other authenticated guests on the same event
+      // can read them. Anonymous visitors cannot.
+      match /rsvp-photos/{file=**} {
+        allow read: if isAdmin()
+                    || (isSignedIn() && request.auth.uid == resource.metadata.ownerUid)
+                    || (isSignedIn() && resource.metadata.eventSlug == slug);
+        allow write: if isSignedIn()
+                     && request.resource.size < 10 * 1024 * 1024
+                     && request.resource.metadata.ownerUid == request.auth.uid;
+      }
+
+      // Hero / gallery / general event media. Public for *published* events;
+      // admin-only for drafts.
+      match /{file} {
+        allow read: if isAdmin()
+                    || resource.metadata.published == "true"
+                    || resource.metadata.public == "true";
+        allow write: if isAdmin()
+                     && request.resource.size < 25 * 1024 * 1024;
+      }
+
+      // Drafts bucket — never public.
+      match /drafts/{file=**} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    // /users/{uid}/... — only that user or an admin.
+    match /users/{uid}/{allPaths=**} {
+      allow read, write: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+    }
+
+    // /admin/** — strictly admin.
+    match /admin/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Default deny — anything not matched above is rejected.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
