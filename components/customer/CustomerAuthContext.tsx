@@ -44,6 +44,10 @@ export interface CustomerUser {
   photoURL: string | null
   isAdmin: boolean
   plan: string
+  /** Contact number from users/{uid}.phone — required before portal access. */
+  phone: string | null
+  /** True while the phone number still needs to be supplied/confirmed. */
+  needsPhone: boolean
 }
 
 interface CustomerAuthContextType {
@@ -55,6 +59,7 @@ interface CustomerAuthContextType {
   resetPassword: (email: string) => Promise<void>
   logout: () => Promise<void>
   refreshPlan: () => Promise<string>
+  savePhone: (phone: string) => Promise<void>
 }
 
 const CustomerAuthContext = createContext<CustomerAuthContextType | undefined>(
@@ -78,33 +83,38 @@ export function useCustomerAuth(): CustomerAuthContextType {
  * keys the security rules' update-allowlist rejects → the customer sees
  * "Missing or insufficient permissions." One uid = one in-flight promise.
  */
-const profileInFlight = new Map<string, Promise<{ isAdmin: boolean; plan: string }>>()
+const profileInFlight = new Map<
+  string,
+  Promise<{ isAdmin: boolean; plan: string; phone: string | null }>
+>()
 
 async function fetchOrCreateProfile(
   firebaseUser: User
-): Promise<{ isAdmin: boolean; plan: string }> {
+): Promise<{ isAdmin: boolean; plan: string; phone: string | null }> {
   // Admins carry the custom claim; they never touch the customer portal.
   const token = await firebaseUser.getIdTokenResult()
   const isAdmin = token.claims.admin === true
 
   const userRef = doc(db, "users", firebaseUser.uid)
 
-  // Existing profile → read plan, touch lastLogin (allowed fields only).
+  // Existing profile → read plan/phone, touch lastLogin (allowed fields only).
   try {
     const snap = await getDoc(userRef)
     if (snap.exists()) {
-      const plan = (snap.data() as { plan?: string }).plan || "free"
+      const data = snap.data() as { plan?: string; phone?: string }
+      const plan = data.plan || "free"
+      const phone = typeof data.phone === "string" && data.phone.trim() ? data.phone.trim() : null
       updateDoc(userRef, {
         lastLogin: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }).catch(() => {}) // cosmetic only — never block sign-in on it
-      return { isAdmin, plan }
+      return { isAdmin, plan, phone }
     }
   } catch {
     // Read failed (e.g. claim not yet on token) — fall through to create.
   }
 
-  if (isAdmin) return { isAdmin, plan: "free" }
+  if (isAdmin) return { isAdmin, plan: "free", phone: null }
 
   // First login (register or Google) — create the customer profile.
   // The rules force role == "customer" for self-created profiles. A merge
@@ -133,20 +143,23 @@ async function fetchOrCreateProfile(
   }
 
   let plan = "free"
+  let phone: string | null = null
   try {
     const snap = await getDoc(userRef)
     if (snap.exists()) {
-      plan = (snap.data() as { plan?: string }).plan || "free"
+      const data = snap.data() as { plan?: string; phone?: string }
+      plan = data.plan || "free"
+      phone = typeof data.phone === "string" && data.phone.trim() ? data.phone.trim() : null
     }
   } catch {
-    // Keep "free" — RequireCustomer's gate handles the fallback safely.
+    // Keep defaults — RequireCustomer's gate handles the fallback safely.
   }
-  return { isAdmin, plan }
+  return { isAdmin, plan, phone }
 }
 
 function loadOrCreateProfile(
   firebaseUser: User
-): Promise<{ isAdmin: boolean; plan: string }> {
+): Promise<{ isAdmin: boolean; plan: string; phone: string | null }> {
   const uid = firebaseUser.uid
   let inFlight = profileInFlight.get(uid)
   if (!inFlight) {
@@ -166,7 +179,7 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const { isAdmin, plan } = await loadOrCreateProfile(firebaseUser)
+          const { isAdmin, plan, phone } = await loadOrCreateProfile(firebaseUser)
           setUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email,
@@ -174,6 +187,8 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
             photoURL: firebaseUser.photoURL,
             isAdmin,
             plan,
+            phone,
+            needsPhone: !phone,
           })
         } catch (err) {
           console.error("[customer-auth] profile load failed:", err)
@@ -184,6 +199,8 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
             photoURL: firebaseUser.photoURL,
             isAdmin: false,
             plan: "free",
+            phone: null,
+            needsPhone: true,
           })
         }
       } else {
@@ -219,7 +236,7 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string): Promise<CustomerUser> => {
       const result = await signInWithEmailAndPassword(auth, email, password)
-      const { isAdmin, plan } = await loadOrCreateProfile(result.user)
+      const { isAdmin, plan, phone } = await loadOrCreateProfile(result.user)
       return {
         uid: result.user.uid,
         email: result.user.email,
@@ -227,6 +244,8 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
         photoURL: result.user.photoURL,
         isAdmin,
         plan,
+        phone,
+        needsPhone: !phone,
       }
     },
     []
@@ -244,7 +263,7 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
       // this path would land as an *update* with fields the rules reject
       // ("Missing or insufficient permissions"). Awaiting the shared
       // de-duped promise is race-safe and gives us the authoritative plan.
-      const { plan } = await loadOrCreateProfile(result.user)
+      const { plan, phone } = await loadOrCreateProfile(result.user)
       return {
         uid: result.user.uid,
         email: result.user.email,
@@ -252,6 +271,8 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
         photoURL: result.user.photoURL,
         isAdmin: false,
         plan,
+        phone,
+        needsPhone: !phone,
       }
     },
     []
@@ -260,7 +281,7 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = useCallback(async (): Promise<CustomerUser> => {
     const provider = new GoogleAuthProvider()
     const result = await signInWithPopup(auth, provider)
-    const { isAdmin, plan } = await loadOrCreateProfile(result.user)
+    const { isAdmin, plan, phone } = await loadOrCreateProfile(result.user)
     return {
       uid: result.user.uid,
       email: result.user.email,
@@ -268,6 +289,8 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
       photoURL: result.user.photoURL,
       isAdmin,
       plan,
+      phone,
+      needsPhone: !phone,
     }
   }, [])
 
@@ -282,14 +305,31 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
 
   const refreshPlan = useCallback(async (): Promise<string> => {
     if (!auth.currentUser) return "free"
-    const { plan } = await loadOrCreateProfile(auth.currentUser)
-    setUser((prev) => (prev ? { ...prev, plan } : prev))
+    const { plan, phone } = await loadOrCreateProfile(auth.currentUser)
+    setUser((prev) =>
+      prev ? { ...prev, plan, phone, needsPhone: !phone } : prev
+    )
     return plan
   }, [])
 
+  /** Save the customer's contact number (rules: own `phone` field only). */
+  const savePhone = useCallback(
+    async (phone: string): Promise<void> => {
+      if (!auth.currentUser) throw new Error("Not signed in")
+      await updateDoc(doc(db, "users", auth.currentUser.uid), {
+        phone: phone.trim(),
+        updatedAt: serverTimestamp(),
+      })
+      setUser((prev) =>
+        prev ? { ...prev, phone: phone.trim(), needsPhone: false } : prev
+      )
+    },
+    []
+  )
+
   return (
     <CustomerAuthContext.Provider
-      value={{ user, loading, login, register, loginWithGoogle, resetPassword, logout, refreshPlan }}
+      value={{ user, loading, login, register, loginWithGoogle, resetPassword, logout, refreshPlan, savePhone }}
     >
       {children}
     </CustomerAuthContext.Provider>

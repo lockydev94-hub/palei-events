@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Playfair_Display, Manrope } from "next/font/google";
 import { SiteSettingsProvider } from "@/components/layout/SiteSettingsProvider";
+import { ChromeGate } from "@/components/layout/ChromeGate";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { FloatingContact } from "@/components/ui/FloatingContact";
@@ -99,11 +100,16 @@ export default function RootLayout({
         <SiteSettingsProvider>
           <PageLoader />
           <PublicAnnouncementLayer />
-          <Navbar />
+          {/* The customer dashboard is a full app shell — no public chrome. */}
+          <ChromeGate>
+            <Navbar />
+          </ChromeGate>
           <main id="main">{children}</main>
-          <Footer />
-          <FloatingContact />
-          <ScrollToTop />
+          <ChromeGate>
+            <Footer />
+            <FloatingContact />
+            <ScrollToTop />
+          </ChromeGate>
         </SiteSettingsProvider>
       </body>
     </html>

@@ -20,7 +20,7 @@ import { PageHeader, Card } from "@/components/customer/DashboardShell"
 import { ImageUploader } from "@/components/admin/ImageUploader"
 
 export default function CustomerProfilePage() {
-  const { user, logout } = useCustomerAuth()
+  const { user, logout, savePhone } = useCustomerAuth()
   const router = useRouter()
 
   const [name, setName] = useState("")
@@ -28,6 +28,11 @@ export default function CustomerProfilePage() {
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileSaved, setProfileSaved] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
+
+  const [phone, setPhone] = useState("")
+  const [savingPhone, setSavingPhone] = useState(false)
+  const [phoneSaved, setPhoneSaved] = useState(false)
+  const [phoneError, setPhoneError] = useState<string | null>(null)
 
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -39,6 +44,7 @@ export default function CustomerProfilePage() {
     if (user) {
       setName(user.displayName || "")
       setPhotoURL(user.photoURL || "")
+      setPhone(user.phone || "")
     }
   }, [user?.uid])
 
@@ -61,6 +67,27 @@ export default function CustomerProfilePage() {
       setProfileError("Could not save your profile. Please try again.")
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  async function handlePhoneSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!user) return
+    if (phone.replace(/\D/g, "").length !== 10) {
+      setPhoneError("Enter a valid 10-digit mobile number.")
+      return
+    }
+    setSavingPhone(true)
+    setPhoneError(null)
+    setPhoneSaved(false)
+    try {
+      await savePhone(phone)
+      setPhoneSaved(true)
+    } catch (err) {
+      console.error("[customer] phone update failed:", err)
+      setPhoneError("Could not save your number. Please try again.")
+    } finally {
+      setSavingPhone(false)
     }
   }
 
@@ -186,6 +213,23 @@ export default function CustomerProfilePage() {
                 Email can&apos;t be changed here — contact support if needed.
               </p>
             </div>
+            <div>
+              <label htmlFor="pf-phone" className={labelCls}>Mobile number</label>
+              <input
+                id="pf-phone"
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                value={phone}
+                onChange={(e) => {
+                  setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                  setPhoneSaved(false)
+                }}
+                placeholder="10-digit number"
+                className={inputCls}
+                style={inputStyle}
+              />
+            </div>
 
             {profileSaved && (
               <p
@@ -215,6 +259,47 @@ export default function CustomerProfilePage() {
               {savingProfile && <Loader2 className="h-4 w-4 animate-spin" />}
               Save changes
             </button>
+          </form>
+
+          {/* Mobile number — separate form so it saves via savePhone */}
+          <form onSubmit={handlePhoneSave} className="mt-6 border-t border-navy/10 pt-6">
+            <div className="max-w-xs">
+              <label htmlFor="pf-phone-2" className={labelCls}>Update mobile number</label>
+              <div className="flex gap-2">
+                <input
+                  id="pf-phone-2"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                    setPhoneSaved(false)
+                  }}
+                  placeholder="10-digit number"
+                  className={inputCls}
+                  style={inputStyle}
+                />
+                <button
+                  type="submit"
+                  disabled={savingPhone}
+                  className="flex-shrink-0 rounded-xl px-5 text-[0.82rem] font-semibold text-navy-dark transition-all hover:-translate-y-0.5 disabled:opacity-60"
+                  style={{ background: "linear-gradient(135deg, #e0c584, #c89b3c)" }}
+                >
+                  {savingPhone ? <Loader2 className="h-4 w-4 animate-spin" /> : "Update"}
+                </button>
+              </div>
+              {phoneSaved && (
+                <p className="mt-2 text-[0.76rem] font-medium" style={{ color: "#047857" }} role="status">
+                  Number updated ✓
+                </p>
+              )}
+              {phoneError && (
+                <p className="mt-2 text-[0.76rem]" style={{ color: "#b91c1c" }} role="alert">
+                  {phoneError}
+                </p>
+              )}
+            </div>
           </form>
         </Card>
 

@@ -147,13 +147,13 @@ service cloud.firestore {
       allow create: if isAdmin()
         || (isOwner(userId) && request.resource.data.role == "customer");
       // Users can update their own non-privileged fields (displayName,
-      // photoURL, preferences); admins can update anything including
+      // photoURL, phone, preferences); admins can update anything including
       // role / plan / claim.
       allow update: if isAdmin()
         || (
           isOwner(userId)
           && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(["displayName", "photoURL", "preferences", "updatedAt", "lastLogin"])
+              .hasOnly(["displayName", "photoURL", "phone", "preferences", "updatedAt", "lastLogin"])
         );
       allow delete: if isAdmin();
     }
@@ -164,6 +164,14 @@ service cloud.firestore {
       // read and manage everything. Only admins create / change subs.
       allow read: if isAdmin()
         || (isAuth() && resource.data.userId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Invoices (admin-generated at plan approval) ───────────
+    // Admins create and manage; the billed customer can read their own.
+    match /invoices/{docId} {
+      allow read: if isAdmin()
+        || (isAuth() && resource.data.customerUid == request.auth.uid);
       allow create, update, delete: if isAdmin();
     }
 

@@ -16,6 +16,15 @@ import {
   rejectPlanRequest,
   type PlanRequest,
 } from "@/lib/customer"
+import {
+  getInvoices,
+  recordInvoicePayment,
+  cancelInvoice,
+  printInvoice,
+  paymentMethodLabel,
+  type Invoice,
+  type PaymentMethod,
+} from "@/lib/invoice"
 import { useAuth } from "@/components/admin/auth/AuthContext"
 import {
   CreditCard,
@@ -30,9 +39,12 @@ import {
   Clock,
   Check,
   Ban,
+  FileText,
+  Printer,
+  IndianRupee,
 } from "lucide-react"
 
-type Tab = "requests" | "subscriptions" | "overview"
+type Tab = "requests" | "invoices" | "subscriptions" | "overview"
 
 export default function BillingPage() {
   const [tab, setTab] = useState<Tab>("requests")
@@ -47,11 +59,18 @@ export default function BillingPage() {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState("")
   const [filterStatus, setFilterStatus] = useState<string>("all")
+  // Invoices tab state
+  const [invoices, setInvoices] = useState<Invoice[] | null>(null)
+  const [paying, setPaying] = useState<Invoice | null>(null)
+  const [payAmount, setPayAmount] = useState("")
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash")
+  const [payRef, setPayRef] = useState("")
   const { user } = useAuth()
 
   useEffect(() => {
     load()
     getPlanRequests().then(setRequests)
+    getInvoices().then(setInvoices)
   }, [])
 
   async function load() {
@@ -180,6 +199,20 @@ export default function BillingPage() {
           )}
         </button>
         <button
+          onClick={() => setTab("invoices")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            tab === "invoices" ? "bg-gold/15 text-gold" : "text-gold-light/50 hover:text-gold-light hover:bg-white/5"
+          }`}
+        >
+          <FileText className="h-4 w-4" />
+          Invoices
+          {(invoices?.filter((i) => i.status === "unpaid" || i.status === "partial").length ?? 0) > 0 && (
+            <span className="ml-1 rounded-full bg-red-500/80 px-1.5 py-0.5 text-[0.6rem] font-bold text-white">
+              {invoices!.filter((i) => i.status === "unpaid" || i.status === "partial").length}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setTab("subscriptions")}
           className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
             tab === "subscriptions" ? "bg-gold/15 text-gold" : "text-gold-light/50 hover:text-gold-light hover:bg-white/5"
@@ -281,6 +314,108 @@ export default function BillingPage() {
                         </button>
                       </div>
                     )}
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── Invoices tab ─────────────────────────────────── */}
+      {tab === "invoices" && (
+        <div className="grid gap-3">
+          {(invoices ?? []).length === 0 ? (
+            <div className="bg-navy/60 border border-white/5 rounded-xl p-12 text-center">
+              <FileText className="mx-auto mb-3 h-10 w-10 text-gold/30" />
+              <p className="text-gold-light font-display text-lg font-semibold">No invoices yet</p>
+              <p className="text-gold-light/40 text-sm mt-1">
+                An invoice is generated automatically when you approve a plan request.
+              </p>
+            </div>
+          ) : (
+            (invoices ?? []).map((inv) => {
+              const statusTone =
+                inv.status === "paid"
+                  ? "rgba(16,185,129,0.12)"
+                  : inv.status === "partial"
+                  ? "rgba(245,158,11,0.12)"
+                  : inv.status === "cancelled"
+                  ? "rgba(107,114,128,0.12)"
+                  : "rgba(239,68,68,0.12)"
+              const statusColor =
+                inv.status === "paid"
+                  ? "#059669"
+                  : inv.status === "partial"
+                  ? "#d97706"
+                  : inv.status === "cancelled"
+                  ? "#6b7280"
+                  : "#dc2626"
+              return (
+                <div key={inv.id} className="bg-navy/60 border border-white/5 rounded-xl p-5">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <p className="font-semibold text-gold-light">{inv.number}</p>
+                        <span
+                          className="rounded-full px-2.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider"
+                          style={{ background: statusTone, color: statusColor }}
+                        >
+                          {inv.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[0.8rem] text-gold-light/60">
+                        {inv.customerName} · {inv.customerEmail}
+                        {inv.customerPhone ? ` · +91 ${inv.customerPhone}` : ""}
+                      </p>
+                      <p className="mt-0.5 text-[0.72rem] text-gold-light/35">
+                        {inv.plan} plan · issued {new Date(inv.issuedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                        {inv.paymentMethod ? ` · via ${paymentMethodLabel(inv.paymentMethod)}` : ""}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-display text-lg font-bold text-gold-light">₹{inv.total.toLocaleString("en-IN")}</p>
+                      {inv.amountPaid > 0 && (
+                        <p className="text-[0.7rem] text-emerald-400">paid ₹{inv.amountPaid.toLocaleString("en-IN")}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(inv.status === "unpaid" || inv.status === "partial") && (
+                        <button
+                          onClick={() => {
+                            setPaying(inv)
+                            setPayAmount(String(inv.total - inv.amountPaid))
+                            setPayMethod("cash")
+                            setPayRef("")
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[0.78rem] font-semibold text-navy-dark"
+                          style={{ background: "linear-gradient(135deg, #e0c584, #c89b3c)" }}
+                        >
+                          <IndianRupee className="h-3.5 w-3.5" />
+                          Record payment
+                        </button>
+                      )}
+                      <button
+                        onClick={() => printInvoice(inv)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3.5 py-2 text-[0.78rem] font-medium text-gold-light/80 hover:bg-white/5"
+                      >
+                        <Printer className="h-3.5 w-3.5" />
+                        Print
+                      </button>
+                      {inv.status === "unpaid" && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Cancel invoice ${inv.number}?`)) return
+                            await cancelInvoice(inv.id)
+                            setInvoices((prev) => prev?.map((i) => (i.id === inv.id ? { ...i, status: "cancelled" as const } : i)) ?? prev)
+                          }}
+                          className="rounded-lg p-2 text-red-400 hover:bg-red-500/10"
+                          aria-label="Cancel invoice"
+                        >
+                          <Ban className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -505,6 +640,146 @@ export default function BillingPage() {
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Record-payment modal */}
+      {paying && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setPaying(null)}
+        >
+          <div
+            className="w-full max-w-md bg-navy border border-white/10 rounded-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-display text-lg font-semibold text-gold-light">
+                  Record payment
+                </h3>
+                <p className="text-gold-light/40 text-sm mt-1">
+                  {paying.number} · {paying.customerName}
+                </p>
+              </div>
+              <button onClick={() => setPaying(null)} className="p-1 text-gold-light/40 hover:text-gold-light">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-xl bg-white/[0.03] border border-white/5 px-4 py-3">
+              <div className="flex justify-between text-[0.8rem] text-gold-light/50">
+                <span>Total</span>
+                <span>₹{paying.total.toLocaleString("en-IN")}</span>
+              </div>
+              {paying.amountPaid > 0 && (
+                <div className="flex justify-between text-[0.8rem] text-emerald-400 mt-1">
+                  <span>Already paid</span>
+                  <span>₹{paying.amountPaid.toLocaleString("en-IN")}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-[0.85rem] font-semibold text-gold-light mt-1">
+                <span>Balance due</span>
+                <span>₹{(paying.total - paying.amountPaid).toLocaleString("en-IN")}</span>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label className="block text-gold-light/50 text-[10px] uppercase tracking-wider mb-1.5">
+                  Amount collected (₹)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={paying.total - paying.amountPaid}
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="w-full rounded-lg bg-navy-dark border border-white/10 px-4 py-2.5 text-sm text-gold-light outline-none focus:border-gold/50"
+                />
+              </div>
+              <div>
+                <label className="block text-gold-light/50 text-[10px] uppercase tracking-wider mb-1.5">
+                  Payment method
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["cash", "upi", "online"] as PaymentMethod[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPayMethod(m)}
+                      className={`rounded-lg px-3 py-2.5 text-[0.8rem] font-semibold uppercase tracking-wide transition-colors ${
+                        payMethod === m
+                          ? "bg-gold/20 text-gold border border-gold/50"
+                          : "text-gold-light/50 border border-white/10 hover:bg-white/5"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-gold-light/50 text-[10px] uppercase tracking-wider mb-1.5">
+                  Reference / note <span className="normal-case">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={payRef}
+                  onChange={(e) => setPayRef(e.target.value)}
+                  placeholder={payMethod === "upi" ? "UPI transaction ID" : payMethod === "online" ? "Bank ref / UTR" : "Receipt no."}
+                  className="w-full rounded-lg bg-navy-dark border border-white/10 px-4 py-2.5 text-sm text-gold-light outline-none focus:border-gold/50"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setPaying(null)}
+                className="rounded-lg px-4 py-2.5 text-sm text-gold-light/50 hover:text-gold-light"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const amount = parseInt(payAmount, 10)
+                  if (!amount || amount <= 0) return
+                  try {
+                    await recordInvoicePayment(paying.id, {
+                      amount,
+                      method: payMethod,
+                      reference: payRef,
+                      actor: user ? { uid: user.uid, email: user.email || "" } : { uid: "", email: "" },
+                    })
+                    setInvoices((prev) =>
+                      prev?.map((i) => {
+                        if (i.id !== paying.id) return i
+                        const paid = Math.min(i.amountPaid + amount, i.total)
+                        return {
+                          ...i,
+                          amountPaid: paid,
+                          status: paid >= i.total ? ("paid" as const) : ("partial" as const),
+                          paymentMethod: payMethod,
+                          paymentReference: payRef || i.paymentReference,
+                          paidAt: new Date().toISOString(),
+                        }
+                      }) ?? prev
+                    )
+                    setPaying(null)
+                    setPayRef("")
+                  } catch (err) {
+                    console.error("Payment recording failed:", err)
+                    alert("Could not record the payment — see console for details.")
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-navy-dark"
+                style={{ background: "linear-gradient(135deg, #e0c584, #c89b3c)" }}
+              >
+                <Check className="h-4 w-4" />
+                Save payment
               </button>
             </div>
           </div>

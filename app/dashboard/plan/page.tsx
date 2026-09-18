@@ -7,7 +7,7 @@
  * request history.
  */
 import { useEffect, useState } from "react"
-import { Check, Clock, CreditCard, Loader2, Sparkles, XCircle } from "lucide-react"
+import { Check, Clock, CreditCard, FileText, Loader2, Sparkles, XCircle } from "lucide-react"
 import { useCustomerAuth } from "@/components/customer/CustomerAuthContext"
 import { PageHeader, Card } from "@/components/customer/DashboardShell"
 import {
@@ -17,6 +17,7 @@ import {
   type PlanRequest,
   type PlanTier,
 } from "@/lib/customer"
+import { getMyInvoices, paymentMethodLabel, type Invoice } from "@/lib/invoice"
 import { db } from "@/lib/firebase"
 import { collection, onSnapshot, query, where } from "firebase/firestore"
 import type { Subscription } from "@/lib/firestore"
@@ -39,6 +40,7 @@ export default function CustomerPlanPage() {
   const [request, setRequest] = useState<PlanRequest | null>(null)
   const [history, setHistory] = useState<PlanRequest[]>([])
   const [subscription, setSubscription] = useState<Subscription | null>(null)
+  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [selected, setSelected] = useState<PlanTier>("premium")
   const [message, setMessage] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -48,6 +50,7 @@ export default function CustomerPlanPage() {
     if (!user) return
     // History (fires once + on admin decisions)
     getMyPlanRequests(user.uid).then(setHistory)
+    getMyInvoices(user.uid).then(setInvoices)
     const unsub = subscribeToMyPlanRequests(user.uid, (rs) => {
       setHistory(rs)
       setRequest(rs.find((r) => r.status === "pending") ?? rs[0] ?? null)
@@ -154,6 +157,55 @@ export default function CustomerPlanPage() {
             Your request for the <strong>{request ? TIER_LABELS[request.plan] : ""}</strong> plan is under review.
           </p>
         </div>
+      )}
+
+      {/* Invoices */}
+      {invoices.length > 0 && (
+        <Card className="mb-6 p-6 sm:p-8">
+          <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-navy">
+            <FileText className="h-4.5 w-4.5 text-gold" />
+            Invoices
+          </h2>
+          <div className="mt-4 grid gap-3">
+            {invoices.map((inv) => {
+              const tone =
+                inv.status === "paid"
+                  ? { bg: "rgba(16,185,129,0.12)", color: "#059669" }
+                  : inv.status === "partial"
+                  ? { bg: "rgba(245,158,11,0.12)", color: "#d97706" }
+                  : inv.status === "cancelled"
+                  ? { bg: "rgba(107,114,128,0.12)", color: "#6b7280" }
+                  : { bg: "rgba(239,68,68,0.12)", color: "#dc2626" }
+              return (
+                <div
+                  key={inv.id}
+                  className="flex flex-wrap items-center gap-4 rounded-xl px-4 py-3.5"
+                  style={{ background: "rgba(23,32,51,0.03)" }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[0.85rem] font-semibold text-navy">{inv.number}</p>
+                    <p className="text-[0.72rem] text-mutedText">
+                      {inv.plan} plan · issued{" "}
+                      {new Date(inv.issuedAt).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                      {inv.paymentMethod ? ` · ${paymentMethodLabel(inv.paymentMethod)}` : ""}
+                    </p>
+                  </div>
+                  <p className="font-semibold text-navy">₹{inv.total.toLocaleString("en-IN")}</p>
+                  <span
+                    className="rounded-full px-3 py-1 text-[0.66rem] font-bold uppercase tracking-wider"
+                    style={{ background: tone.bg, color: tone.color }}
+                  >
+                    {inv.status}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
       )}
 
       {/* Upgrade / change request */}

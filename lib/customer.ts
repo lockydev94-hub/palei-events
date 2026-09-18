@@ -23,6 +23,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore"
 import { db, adminDb } from "@/lib/firebase"
+import { generateInvoiceForPlanRequest } from "@/lib/invoice"
 import {
   createEvent,
   deleteEvent,
@@ -160,6 +161,39 @@ export async function approvePlanRequest(
     updatedAt: new Date().toISOString(),
     metadata: { version: 1 },
   })
+
+  // Generate an unpaid invoice for the approved plan. Best-effort: the
+  // approval must not fail if pricing is missing — the admin can still
+  // record payment manually from the Invoices panel.
+  try {
+    let planPrice = ""
+    let planName: string = request.plan
+    try {
+      const planSnap = await getDoc(doc(adminDb, "pricingPlans", request.plan))
+      if (planSnap.exists()) {
+        const p = planSnap.data() as { name?: string; price?: string }
+        planName = p.name || planName
+        planPrice = p.price || ""
+      }
+    } catch {
+      // pricingPlans doc missing → fall back to the request's plan key.
+    }
+    await generateInvoiceForPlanRequest({
+      request: {
+        id: request.id,
+        uid: request.uid,
+        email: request.email,
+        displayName: request.displayName,
+        plan: request.plan as PlanTier,
+      },
+      planName,
+      planPrice,
+      notes: "Generated automatically on plan approval.",
+      adminActor: actor,
+    })
+  } catch (err) {
+    console.warn("[admin] invoice generation failed (approval succeeded):", err)
+  }
 }
 
 /** Admin rejects a plan request with an optional note to the customer. */

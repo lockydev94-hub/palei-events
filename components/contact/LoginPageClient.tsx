@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { FirebaseError } from "firebase/app";
+import { Phone } from "lucide-react";
 import { useCustomerAuth } from "@/components/customer/CustomerAuthContext";
 
 const GOLD = "#c89b3c";
@@ -65,7 +66,8 @@ type Mode = "login" | "register" | "forgot";
 export function LoginPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, register, loginWithGoogle, resetPassword } = useCustomerAuth();
+  const { login, register, loginWithGoogle, resetPassword, savePhone } =
+    useCustomerAuth();
 
   const [mode, setMode] = useState<Mode>("login");
   const [showPass, setShowPass] = useState(false);
@@ -77,16 +79,49 @@ export function LoginPageClient() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function afterAuth(isAdmin: boolean) {
-    // Admins land in the admin console; everyone else on the customer
-    // dashboard (which itself gates un-approved plans).
+  // Phone gate: after Google sign-in the profile may have no contact
+  // number. Until one is saved the customer cannot reach the dashboard.
+  const [phoneStep, setPhoneStep] = useState(false);
+  const [phone, setPhone] = useState("");
+
+  async function afterAuth(u: { isAdmin: boolean; needsPhone: boolean }) {
+    // Admins land in the admin console directly.
+    if (u.isAdmin) {
+      const next = searchParams.get("next");
+      router.replace(next && next.startsWith("/") ? next : "/admin/dashboard");
+      return;
+    }
+    // Customers missing a contact number must add one first.
+    if (u.needsPhone) {
+      setPhoneStep(true);
+      return;
+    }
     const next = searchParams.get("next");
     if (next && next.startsWith("/")) {
       router.replace(next);
-    } else if (isAdmin) {
-      router.replace("/admin/dashboard");
     } else {
       router.replace("/dashboard");
+    }
+  }
+
+  async function handlePhoneSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length !== 10) {
+      setError("Enter a valid 10-digit mobile number.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await savePhone(digits);
+      const next = searchParams.get("next");
+      router.replace(next && next.startsWith("/") ? next : "/dashboard");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not save your number. Try again."
+      );
+      setBusy(false);
     }
   }
 
@@ -98,10 +133,10 @@ export function LoginPageClient() {
     try {
       if (mode === "login") {
         const u = await login(email, password);
-        await afterAuth(u.isAdmin);
+        await afterAuth(u);
       } else if (mode === "register") {
         const u = await register(name, email, password);
-        await afterAuth(u.isAdmin);
+        await afterAuth(u);
       } else {
         await resetPassword(email);
         setNotice("Password reset email sent — check your inbox.");
@@ -118,7 +153,7 @@ export function LoginPageClient() {
     setBusy(true);
     try {
       const u = await loginWithGoogle();
-      await afterAuth(u.isAdmin);
+      await afterAuth(u);
     } catch (err) {
       setError(friendlyAuthError(err));
     } finally {
@@ -184,6 +219,119 @@ export function LoginPageClient() {
 
       {/* ── Card ── */}
       <div className="relative z-10 w-full max-w-[440px] mx-auto px-4 py-10">
+        {phoneStep && (
+          <>
+            <div className="flex flex-col items-center mb-7">
+              <div
+                className="flex items-center justify-center h-14 w-14 rounded-2xl mb-4"
+                style={{
+                  background: "linear-gradient(145deg, rgba(200,155,60,0.20), rgba(200,155,60,0.07))",
+                  border: "1px solid rgba(200,155,60,0.35)",
+                  boxShadow: "0 0 32px rgba(200,155,60,0.18)",
+                }}
+              >
+                <Phone className="h-6 w-6" style={{ color: GOLD_LIGHT }} />
+              </div>
+              <h1
+                className="font-display font-semibold text-[1.5rem]"
+                style={{ color: "#fffdf8" }}
+              >
+                Add your mobile number
+              </h1>
+              <p
+                className="mt-2 text-center text-[0.85rem]"
+                style={{ color: "rgba(255,253,248,0.5)" }}
+              >
+                We need a contact number to finish setting up your account —
+                used for event updates and support.
+              </p>
+            </div>
+            <div
+              className="relative overflow-hidden rounded-3xl"
+              style={{
+                background: "linear-gradient(145deg, rgba(255,253,248,0.07) 0%, rgba(255,253,248,0.03) 100%)",
+                border: "1px solid rgba(200,155,60,0.20)",
+                backdropFilter: "blur(20px)",
+                boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
+              }}
+            >
+              <div className="p-8 md:p-10">
+                {error && (
+                  <div
+                    className="mb-5 rounded-xl px-4 py-3 text-[0.83rem]"
+                    style={{
+                      background: "rgba(239,68,68,0.10)",
+                      border: "1px solid rgba(239,68,68,0.35)",
+                      color: "#fca5a5",
+                    }}
+                    role="alert"
+                  >
+                    {error}
+                  </div>
+                )}
+                <form onSubmit={handlePhoneSubmit} className="space-y-5">
+                  <div>
+                    <label
+                      htmlFor="phone-input"
+                      className="block text-[0.76rem] font-semibold uppercase tracking-[0.16em] mb-2"
+                      style={{ color: focused === "phone" ? GOLD_LIGHT : "rgba(255,253,248,0.45)" }}
+                    >
+                      Mobile number
+                    </label>
+                    <div className="relative">
+                      <span
+                        className="absolute left-4 top-1/2 -translate-y-1/2 text-[0.9rem] font-medium"
+                        style={{ color: "rgba(255,253,248,0.4)" }}
+                      >
+                        +91
+                      </span>
+                      <input
+                        id="phone-input"
+                        type="tel"
+                        inputMode="numeric"
+                        required
+                        autoFocus
+                        autoComplete="tel-national"
+                        maxLength={13}
+                        value={phone}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                          setPhone(digits);
+                        }}
+                        onFocus={() => setFocused("phone")}
+                        onBlur={() => setFocused(null)}
+                        placeholder="10-digit number"
+                        className="w-full rounded-2xl pl-14 pr-4 py-3.5 text-[0.95rem] tracking-wide outline-none transition-all duration-200"
+                        style={{
+                          background: "rgba(255,253,248,0.06)",
+                          border: focused === "phone" ? `1px solid ${GOLD}80` : "1px solid rgba(255,253,248,0.12)",
+                          color: "#fffdf8",
+                          boxShadow: focused === "phone" ? "0 0 0 3px rgba(200,155,60,0.12)" : "none",
+                          caretColor: GOLD,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="w-full rounded-2xl py-4 font-semibold text-[0.95rem] transition-all duration-300 hover:-translate-y-0.5 disabled:opacity-60"
+                    style={{
+                      background: `linear-gradient(135deg, ${GOLD_PALE} 0%, ${GOLD_LIGHT} 25%, ${GOLD} 60%, #a67f2e 100%)`,
+                      boxShadow: "0 0 40px rgba(200,155,60,0.50)",
+                      color: NAVY_DARK,
+                    }}
+                  >
+                    {busy ? "Saving…" : "Continue to dashboard"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </>
+        )}
+
+        {!phoneStep && (
+        <>
         {/* Logo / Brand mark */}
         <div className="flex flex-col items-center mb-8">
           <div
@@ -498,6 +646,8 @@ export function LoginPageClient() {
             </p>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
